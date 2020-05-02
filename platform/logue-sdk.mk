@@ -225,6 +225,7 @@ package:
 	@echo Packaging to $(PROJECTDIR)/$(PKGARCH)
 	@mkdir -p $(PKGDIR)
 	@cp -a $(PROJECTDIR)/$(MANIFEST) $(PKGDIR)/
+	@[ -z "$(PLATFORM)" ] || sed -Ei s'/^(\s*"platform"\s*:\s*")[^"]+(.*)$$/\1$(PLATFORM)\2/' $(PKGDIR)/$(MANIFEST)
 	@cp -a $(BUILDDIR)/$(PROJECT).bin $(PKGDIR)/$(PAYLOAD)
 	@$(ZIP) $(ZIP_ARGS) $(PROJECT).zip $(PKGDIR)
 	@mv $(PROJECT).zip $(PROJECTDIR)/$(PKGARCH)
