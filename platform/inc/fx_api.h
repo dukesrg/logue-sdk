@@ -142,7 +142,7 @@ extern "C" {
     const uint32_t x0p = (uint32_t)x0f;
 
     const uint32_t x0 = x0p & k_wt_sine_mask;
-    const uint32_t x1 = (x0 + 1) & k_wt_sine_mask;
+    const uint32_t x1 = x0 + 1;
     
     const float y0 = linintf(x0f - x0p, wt_sine_lut_f[x0], wt_sine_lut_f[x1]);
     return (x0p < k_wt_sine_size)?y0:-y0;
