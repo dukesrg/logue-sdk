@@ -21,10 +21,6 @@ const __unit_header unit_header_t unit_header = {
     .num_presets = 0,                                      // Number of internal presets this unit has
     .num_params = PARAM_COUNT,                                       // Number of parameters for this unit, max 24
     .params = {
-        // Format: min, max, center, default, type, fractional, frac. type, <reserved>, name
-
-        // See common/runtime.h for type enum and unit_param_t structure
-
 // Position X Y Z W
         {0, (63 << 9), 0, 0, k_unit_param_type_none, 9, k_unit_param_frac_mode_fixed, 0, {"Position X"}},
         {0, (63 << 9), 0, 0, k_unit_param_type_none, 9, k_unit_param_frac_mode_fixed, 0, {"Position Y"}},

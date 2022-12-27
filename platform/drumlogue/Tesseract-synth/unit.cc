@@ -72,7 +72,7 @@ __unit_callback const uint8_t * unit_get_param_bmp_value(uint8_t id, int32_t val
 __unit_callback void unit_set_tempo(uint32_t tempo) {
   // const float t = (tempo >> 16) + (tempo & 0xFFFF) /
   // static_cast<float>(0x10000);
-  (void)tempo;
+  s_synth_instance.setTempo(tempo);
 }
 
 __unit_callback void unit_note_on(uint8_t note, uint8_t velocity) {
