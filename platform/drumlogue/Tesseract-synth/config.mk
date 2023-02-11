@@ -2,7 +2,7 @@
 # Project Configuration
 #
 
-PROJECT := Tesseract-synth
+PROJECT := Tesseract_synth
 PROJECT_TYPE := synth
 
 ##############################################################################

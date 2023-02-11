@@ -5,7 +5,7 @@
  *  Tesseract Synth Class.
  *
  *
- *  2022 (c) Oleg Burdaev
+ *  2022-2023 (c) Oleg Burdaev
  *  mailto: dukesrg@gmail.com
  *
  */
@@ -51,6 +51,8 @@
 #define INTMAX_RECIP 4.65661287e-10f
 
 #define LFO_MODE_SAMPLE_AND_HOLD 48
+
+#define USER_BANK 5
 
 #define lfoType(a) (a & 3)
 #define lfoWave(a) ((a >> 2) & 3)
@@ -108,7 +110,7 @@ enum {
   param_dimension_y,
   param_dimension_z,
   param_dimension_w,
-  param_wave_bank_idx,
+//  param_wave_bank_idx,
   param_wave_sample_idx,
   param_wave_size,
   param_wave_offset,
@@ -162,25 +164,20 @@ class Synth {
     sAmp = vdup_n_f32(0.f);
     sNotePhase = 0;
 
-    get_num_sample_banks = desc->get_num_sample_banks;
-    get_num_samples_for_bank = desc->get_num_samples_for_bank;
+//    get_num_sample_banks = desc->get_num_sample_banks;
+//    get_num_samples_for_bank = desc->get_num_samples_for_bank;
     get_sample = desc->get_sample;
 
-    sSample = get_sample(0, 0);
     sWaveSize = 1;
     sWaveSizes = vdupq_n_u32(1);
     sWaveSizeExp = 0;
     sWaveSizeExpRes = 32;
     sWaveOffset = 0;
-    sSample = get_sample(0, 0);
+    sSample = get_sample(USER_BANK, 0);
     setSampleOffset();
 
     sLfo.init();
     sDimensionScale = vdupq_n_u32(1);
-//  sDimensionScale = sDimensions * sWaveSize * sSample->channels;
-
-//    srand(time(0));
-      Random::seed(0x2a507c5d, 0x4740aef7, 0xbe183480, 0x363812fd);
 
     // Note: if need to allocate some memory can do it here and return k_unit_err_memory if getting allocation errors
 
@@ -219,6 +216,13 @@ class Synth {
   fast_inline void Render(float * out, size_t frames) {
     float * __restrict out_p = out;
     const float * out_e = out_p + (frames << 1);  // assuming stereo output
+
+//    if (sSample == NULL) {
+      for (; out_p != out_e; out_p += 2) {
+        vst1_f32(out_p, vdup_n_f32(0.f));
+      }
+      return;
+//    }
 /*    
     int32_t folds;
     float tpos;
@@ -444,7 +448,7 @@ class Synth {
 
   inline void setParameter(uint8_t index, int32_t value) {
     sParams[index] = value;
-    uint32_t tmp;
+//    uint32_t tmp;
     switch (index) {
       case param_position_x:
       case param_position_y:
@@ -502,15 +506,16 @@ class Synth {
         sDimensionMaxRecip = 1.f / sDimensionMax;
         sDimensionScale = sDimensions * sWaveSizes * sSample->channels * sizeof(float);
         break;
-      case param_wave_bank_idx:
+//      case param_wave_bank_idx:
       case param_wave_sample_idx:
-        tmp = get_num_sample_banks();
-        if (sParams[param_wave_bank_idx] >= tmp)
-          sParams[param_wave_bank_idx] = tmp;
-        tmp = get_num_samples_for_bank(sParams[param_wave_sample_idx]);
-        if (sParams[param_wave_sample_idx] >= tmp)
-          sParams[param_wave_sample_idx] = tmp;
-        sSample = get_sample(sParams[param_wave_bank_idx], sParams[param_wave_sample_idx]);
+//        tmp = get_num_sample_banks();
+//        if (sParams[param_wave_bank_idx] >= tmp)
+//          sParams[param_wave_bank_idx] = tmp;
+//        tmp = get_num_samples_for_bank(sParams[param_wave_sample_idx]);
+//        if (sParams[param_wave_sample_idx] >= tmp)
+//          sParams[param_wave_sample_idx] = tmp;
+//        sSample = get_sample(sParams[param_wave_bank_idx], sParams[param_wave_sample_idx]);
+        sSample = get_sample(USER_BANK + (sParams[param_wave_sample_idx] >> 7), sParams[param_wave_sample_idx] & 0x7F);
       case param_wave_size:
         sWaveSizeExp = sParams[param_wave_size];
         sWaveSizeExpRes = 32 - sWaveSizeExp;
@@ -518,15 +523,15 @@ class Synth {
         sWaveSize = 1 << sWaveSizeExp;
         sWaveSizeRecip = 1.f / sWaveSize;
         sWaveSizes = vsetq_lane_u32(1, vdupq_n_u32(sWaveSize), 0);
-        sDimensionScale = sDimensions * sWaveSizes * sSample->channels * sizeof(float);
+        sDimensionScale = sDimensions * sWaveSizes * (sSample == NULL ? 1 : sSample->channels) * sizeof(float);
       case param_wave_offset:
         sWaveOffset = sParams[param_wave_offset];
-        if ((sSample->frames >> sWaveSize) <= sWaveOffset) {
+        if ((sSample != NULL) && (sSample->frames >> sWaveSize) <= sWaveOffset) {
           sWaveOffset = (sSample->frames >> sWaveSize) - 1;
           sParams[param_wave_offset] = sWaveOffset;
         }
         setSampleOffset();
-        sWaveMaxIndex = (sSample->frames >> sWaveSizeExp) - sWaveOffset - 1;
+        sWaveMaxIndex = sSample == NULL ? 0 : (sSample->frames >> sWaveSizeExp) - sWaveOffset - 1;
         break;
       default:
         break;
@@ -534,7 +539,6 @@ class Synth {
   }
 
   inline int32_t getParameterValue(uint8_t index) const {
-    sParams[index] = index;
     /*
         switch (index) {
             break;
@@ -555,16 +559,16 @@ class Synth {
     };
 
     static const char * lfoWaveNames[] = {
-        "saw",
-        "tri",
-        "sqr",
-        "sin",
+        "Sw",
+        "Tr",
+        "Sq",
+        "Si",
     };
 
     static const char * lfoOverflowNames[] = {
-        "sat.",
-        "wrap",
-        "fold",
+        "S",
+        "W",
+        "F",
     };
 
     static char s[UNIT_PARAM_NAME_LEN + 1];
@@ -575,12 +579,14 @@ class Synth {
       case param_lfo_mode_z:
       case param_lfo_mode_w:
         if (value != LFO_MODE_SAMPLE_AND_HOLD) {
-          sprintf(s, "%s %s %s", lfoTypeNames[lfoType(value)], lfoWaveNames[lfoWave(value)], lfoOverflowNames[lfoOverflow(value)]);
+          sprintf(s, "%s%s%s", lfoTypeNames[lfoType(value)], lfoWaveNames[lfoWave(value)], lfoOverflowNames[lfoOverflow(value)]);
           return s;
         } else
           return lfoTypeNames[4];
+      case param_wave_sample_idx:
+        return sSample == NULL ? "---" : sSample->name;
       case param_wave_size:
-        sprintf(s, "%4d samples", 1 << value);
+        sprintf(s, "%d", 1 << value);
         return s;
       default:
         break;
@@ -673,7 +679,6 @@ class Synth {
   /*===========================================================================*/
 
   static inline const char * getPresetName(uint8_t idx) {
-    (void)idx;
     // Note: String memory must be accessible even after function returned.
     //       It can be assumed that caller will have copied or used the string
     //       before the next call to getPresetName
@@ -687,16 +692,16 @@ class Synth {
 
   std::atomic_uint_fast32_t flags_;
 
-  static uint8_t sNote;
-  static float sVelocity;
-  static float sPressure;
-  static float32x2_t sAmp;
-  static uint32_t sNotePhase;
-  static uint32_t sNotePhaseIncrement;
-  static float sPitchBend;
+  uint8_t sNote;
+  float sVelocity;
+  float sPressure;
+  float32x2_t sAmp;
+  uint32_t sNotePhase;
+  uint32_t sNotePhaseIncrement;
+  float sPitchBend;
 
-  static uint32_t sParams[PARAM_COUNT];
-  static float32x4_t sPosition;
+  uint32_t sParams[PARAM_COUNT];
+  float32x4_t sPosition;
   struct lfo_t {
     int32x4_t p0, p1, inc;
     uint32x4_t type, wave, overflow;
@@ -705,6 +710,15 @@ class Synth {
     uint32x4_t maskOverflowSaturate, maskOverflowWrap, maskOverflowFold;
     uint32x4_t maskPhaseOverflow;
     int32x4_t SnHOut;
+    uint32x4_t seed = vsetq_lane_u32(0x363812fd, vsetq_lane_u32(0xbe183480, vsetq_lane_u32(0x4740aef7, vdupq_n_u32(0x2a507c5d), 1) , 2), 3);
+
+//get next random vector
+    fast_inline int32x4_t random() {
+      seed = veorq_u32(seed, vshlq_n_u32(seed, 13));
+      seed = veorq_u32(seed, vshrq_n_u32(seed, 17));
+      seed = veorq_u32(seed, vshlq_n_u32(seed, 5));
+      return vreinterpretq_s32_u32(seed);
+    }
 //Set LFO phases and increments to initial values
     force_inline void init() {
       p0 = vdupq_n_s32(INT_MIN);
@@ -717,7 +731,7 @@ class Synth {
         vdupq_n_s32(INT_MIN), // reset phase
         vbslq_s32(maskTypeRandom, // else if random
 //          vmovq_x4_s32((uint32_t)rand() << 1, (uint32_t)rand() << 1, (uint32_t)rand() << 1, (uint32_t)rand() << 1),
-          Random::get(),
+          random(),
           p0 // else keep current
         )
       );
@@ -727,7 +741,7 @@ class Synth {
       p1 = p0;
       p0 = vaddq_s32(p0, inc);
       maskPhaseOverflow = vcltq_s32(p0, p1);
-      SnHOut = vbslq_s32(maskPhaseOverflow, Random::get(), SnHOut);
+      SnHOut = vbslq_s32(maskPhaseOverflow, random(), SnHOut);
       uint32x4_t mask = vandq_u32(maskTypeOneShot, maskPhaseOverflow);
       inc = vbslq_s32(mask, vdupq_n_s32(0), inc);
       p0 = vbslq_s32(mask, vdupq_n_s32(INT_MAX), p0);
@@ -773,36 +787,36 @@ class Synth {
       ));
     }
   } sLfo;
-  static float32x4_t sLfoDepth;
-//  static uint32_t sLfoMode[DIMENSION_COUNT];
-//  static uint32_t sLfoWave[DIMENSION_COUNT];
-//  static uint32_t sLfoOverflow[DIMENSION_COUNT];
-  static float32x4_t sDimension;
-  static float32x4_t sDimensionMax;
-  static float32x4_t sDimensionRecip;
-  static float32x4_t sDimensionMaxRecip;
-  static uint32x4_t sDimensions;
-  static uint32x4_t sDimensionScale;
+  float32x4_t sLfoDepth;
+//  uint32_t sLfoMode[DIMENSION_COUNT];
+//  uint32_t sLfoWave[DIMENSION_COUNT];
+//  uint32_t sLfoOverflow[DIMENSION_COUNT];
+  float32x4_t sDimension;
+  float32x4_t sDimensionMax;
+  float32x4_t sDimensionRecip;
+  float32x4_t sDimensionMaxRecip;
+  uint32x4_t sDimensions;
+  uint32x4_t sDimensionScale;
 
   unit_runtime_get_num_sample_banks_ptr get_num_sample_banks;
   unit_runtime_get_num_samples_for_bank_ptr get_num_samples_for_bank;
   unit_runtime_get_sample_ptr get_sample;
-  static const sample_wrapper_t * sSample;
-  static uint32_t sSampleOffset;
-  static uint32_t sWaveSize;
-  static uint32x4_t sWaveSizes;
-  static uint32_t sWaveSizeExp;
-  static uint32_t sWaveSizeExpRes;
-  static uint32_t sWaveSizeMask;
-  static float sWaveSizeRecip;
-  static uint32_t sWaveOffset;
-  static uint32_t sWaveMaxIndex;
+  const sample_wrapper_t * sSample;
+  uint32_t sSampleOffset;
+  uint32_t sWaveSize;
+  uint32x4_t sWaveSizes;
+  uint32_t sWaveSizeExp;
+  uint32_t sWaveSizeExpRes;
+  uint32_t sWaveSizeMask;
+  float sWaveSizeRecip;
+  uint32_t sWaveOffset;
+  uint32_t sWaveMaxIndex;
 
   /*===========================================================================*/
   /* Private Methods. */
   /*===========================================================================*/
 /*
-static inline float getSample(float *samples, uint32_t phase, uint32_t sizeExpRes, uint32_t sizeExpMask, float sizeRecip) {
+inline float getSample(float *samples, uint32_t phase, uint32_t sizeExpRes, uint32_t sizeExpMask, float sizeRecip) {
   uint32_t x0 = phase >> sizeExpRes;
   uint32_t x1 = (x0 + 1) & sizeExpMask;
   float frac = (phase & sizeExpMask) * sizeRecip;
@@ -810,7 +824,7 @@ static inline float getSample(float *samples, uint32_t phase, uint32_t sizeExpRe
   return out;
 }
 
-static inline float getSample(float *samples, float phase, uint32_t size, uint32_t sizeExp, uint32_t sizeExpRes, uint32_t sizeExpMask, float sizeRecip) {
+inline float getSample(float *samples, float phase, uint32_t size, uint32_t sizeExp, uint32_t sizeExpRes, uint32_t sizeExpMask, float sizeRecip) {
   float x = phase * size;
   uint32_t x0 = (uint32_t)x;
   uint32_t x1 = (x0 + 1) & sizeExpMask;
@@ -819,11 +833,11 @@ static inline float getSample(float *samples, float phase, uint32_t size, uint32
   return out;
 }
 */
-fast_inline static void setSampleOffset() {
-  sSampleOffset = (uint32_t)sSample->sample_ptr + sWaveOffset * sWaveSize * sSample->channels * sizeof(float);
+fast_inline void setSampleOffset() {
+  sSampleOffset = sSample == NULL ? 0 : ((uint32_t)sSample->sample_ptr + sWaveOffset * sWaveSize * sSample->channels * sizeof(float));
 }
 /*
-fast_inline static void setDimensions(uint32_t index, uint32_t value) {
+fast_inline void setDimensions(uint32_t index, uint32_t value) {
   sDimension[index] = value;
   sDimensionMax = sDimension - 1.f;
   sDimensionRecip = 1.f / sDimension;
@@ -831,22 +845,6 @@ fast_inline static void setDimensions(uint32_t index, uint32_t value) {
   sDimensionScale = sDimensions * sWaveSize * sSample->channels;
 }
 */
-class Random {
- private:
-  static uint32x4_t state;
- public:
- //Set random seeds
-  fast_inline static void seed(uint32_t a, uint32_t b, uint32_t c, uint32_t d) {
-    state = vsetq_lane_u32(d, vsetq_lane_u32(c, vsetq_lane_u32(b, vdupq_n_u32(a), 1) , 2), 3);
-  }
-//Get next random values
-  fast_inline static int32x4_t get() {
-    state = veorq_u32(state, vshlq_n_u32(state, 13));
-    state = veorq_u32(state, vshrq_n_u32(state, 17));
-    state = veorq_u32(state, vshlq_n_u32(state, 5));
-    return vreinterpretq_s32_u32(state);
-  }
-};
 
   /*===========================================================================*/
   /* Constants. */
