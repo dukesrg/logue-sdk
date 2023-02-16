@@ -43,7 +43,8 @@
 #define DIMENSION_COUNT 4
 #define POSITION_SCALE .001953125f  // 1/512
 //#define LFO_RATE_SCALE .001f
-#define LFO_RATE_SCALE 89.478485f    // 2^32 / 48000 / 1000
+//#define LFO_RATE_SCALE 89.478485f    // 2^32 / 48000 / 1000
+#define LFO_RATE_SCALE 699.05067f    // 2^32 / 48000 / 128
 #define LFO_RATE_SCALE_TEMPO .022755555f // 2^32 / 48000 / 60 / 2^16 - for 1/4
 //#define LFO_DEPTH_SCALE .001953125f  // 1/512
 #define LFO_DEPTH_SCALE 9.0949470e-13f  // 1 / 2^31 / 512
@@ -219,7 +220,9 @@ class Synth {
 
 //    if (sSample == NULL) {
       for (; out_p != out_e; out_p += 2) {
-        vst1_f32(out_p, vdup_n_f32(0.f));
+//        vst1_f32(out_p, vdup_n_f32(0.f));
+        vst1_f32(out_p, vdup_lane_f32(vget_low_f32(sLfo.get()), 0));
+        sLfo.advance();
       }
       return;
 //    }
@@ -579,7 +582,7 @@ class Synth {
       case param_lfo_mode_z:
       case param_lfo_mode_w:
         if (value != LFO_MODE_SAMPLE_AND_HOLD) {
-          sprintf(s, "%s%s%s", lfoTypeNames[lfoType(value)], lfoWaveNames[lfoWave(value)], lfoOverflowNames[lfoOverflow(value)]);
+          sprintf(s, "%s.%s.%s", lfoTypeNames[lfoType(value)], lfoWaveNames[lfoWave(value)], lfoOverflowNames[lfoOverflow(value)]);
           return s;
         } else
           return lfoTypeNames[4];
