@@ -50,6 +50,5 @@ const __unit_header unit_header_t unit_header = {
         {0, 255, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Sample"}},
         {0, 12, 0, 8, k_unit_param_type_strings, 0, 0, 0, {"Size"}},
         {0, 0x7FFF, 0, 0, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {"Offset"}},
-
         {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}}
 }};
