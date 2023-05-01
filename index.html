@@ -1,0 +1,126 @@
+<html>
+<head>
+<style>
+  * {
+    background-color: #333;
+    color: #fff;
+    font-family: sans-serif;
+    outline: none;
+    box-shadow: none;
+    cursor: default;
+  }
+  label.button {
+    background-color: #0ba;
+    padding: 8px;
+    font-weight: bold;
+    width: 100%;
+    text-transform: uppercase;
+  }
+  a {
+    background-color: #0ba;
+    padding: 8px;
+    font-weight: bold;
+    text-decoration: none;
+    text-transform: uppercase;
+  }
+  a:hover, label.button:hover {
+    border-bottom: 2px solid #ba8;
+  }
+  input[type="file"] {
+    position: absolute;
+    top: -10000px;
+    width: 0px;
+  }
+  .logo {
+    margin: 0;
+    position: absolute;
+    top: 52%;
+    left: 24%;
+    -ms-transform: translate(-50%, -50%);
+    transform: translate(-50%, -50%);
+  }
+  .center {
+    margin: 0;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    -ms-transform: translate(-50%, -50%);
+    transform: translate(-50%, -50%);
+  }
+  .header {
+    color: #8ad;
+    width: *;
+    font-weight: bold;
+    font-size: smaller;
+    text-transform: uppercase;
+    text-align: left;
+    border-bottom: 2px solid #8ad;
+  }
+  .margin {
+    margin-left: 41.5%;
+  }
+</style>
+<script type="text/javascript" src="FileSaver.js"></script>
+<script language="javascript">
+"use strict";
+function handleFiles(f) {
+  var data = new Array();
+  var reader = new FileReader();
+  reader.onload = (event) => {
+    var array = new Uint8Array(event.target.result);
+    if (array.length == 4104 || array.length == 136) {
+      data.push(array.slice(6, array.length - 2));
+    } else {
+      data.push(array);
+    }
+  }
+  reader.onloadend = (event) => {
+    if (data.length < f.files.length) {
+      reader.filename = f.files[data.length].name;
+      reader.readAsArrayBuffer(f.files[data.length]);
+    } else {
+      var len = data.reduce((a, d) => a + d.length, 0);
+      for (var j = 3; j >= 0; j--) {
+        data.unshift(new Uint8Array([(len >> (j * 8)) & 0x7f]));
+      }
+      data.unshift(new Uint8Array([87,65,86,69,102,109,116,32,16,0,0,0,3,0,1,0,128,187,0,0,0,238,2,0,4,0,32,0,100,97,116,97]));
+      len += 28;
+      for (var j = 3; j >= 0; j--) {
+        data.unshift(new Uint8Array([(len >> (j * 8)) & 0x7f]));
+      }
+      data.unshift(new Uint8Array([82,73,70,70]));
+      len += 16;
+      var payload = new Uint8Array(len);
+      data.reduce((a, d) => {
+        payload.set(d, a);
+        return a + d.length;  
+      }, 0);
+      saveAs(new Blob([payload]), "127_FM64Bank_" + Array.from(f.files).map(a => a.name.split(".")[0]).join("_").substring(0, 22) + ".wav");
+    }
+  }
+  reader.readAsArrayBuffer(f.files[0]);
+}
+</script>
+<head>
+<body>
+<div class="logo"><img src="FM64 logo.png"/></div>
+<div class="center">
+<center>
+<div class="header margin">Voice Banks</div>
+<br>
+<a href="FM64_synth.drmlgunit">&nbsp;Unit&nbsp;</a>
+<a href="FM64 2.0 Operations Manual.pdf">Manual</a>
+<label class="button">Create<input type="file" accept=".syx,.dx7,.32" multiple onchange="handleFiles(this);"></label>
+<a href="127_FM64Bank_Factory_and_VRC.wav" download>Factory&VRC</a>
+<br><br><br>
+<div class="header">Wavetables</div>
+<br>
+<a href="120_FM64Wave_DX11_4096.wav" download>DX11</a>
+<a href="121_FM64Wave_SY77_4096.wav" download>SY77</a>
+<a href="122_FM64Wave_opsix_1024.wav" download>opsix</a>
+<a href="123_FM64Wave_logue_Saw,Sqr,Para_256.wav" download>logue #1</a>
+<a href="124_FM64Wave_logue_Wave_banks_128.wav" download>logue #2</a>
+</center>
+</div>
+</body>
+</html>
