@@ -2,7 +2,7 @@
 # Project Configuration
 #
 
-PROJECT := FM64-synth
+PROJECT := FM64_synth
 PROJECT_TYPE := synth
 
 ##############################################################################
@@ -24,7 +24,7 @@ ASMXSRC =
 # Include Paths
 #
 
-UINCDIR  = 
+UINCDIR  = ../inc ../fastapprox/fastapprox/src
 
 ##############################################################################
 # Library Paths
@@ -43,5 +43,5 @@ ULIBS += -lc
 # Macros
 #
 
-UDEFS = -DBANK_COUNT=1
-
+UDEFS = -DPARAM_COUNT=24 -DOP6 -DOPSIX -DSY77 -DEGLUT12
+# -DNOINTERPOLATE

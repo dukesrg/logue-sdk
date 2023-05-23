@@ -1,83 +1,53 @@
-/**0
- *  @file header.c
- *  @brief drumlogue SDK unit header
+/*
+ *  File: header.c
  *
- *  Copyright (c) 2020-2022 KORG Inc. All rights reserved.
+ *  FM64 Synth unit header.
  *
+ *
+ *  2022-2023 (c) Oleg Burdaev
+ *  mailto: dukesrg@gmail.com
  */
 
-#include "unit.h"  // Note: Include common definitions for all units
-
-//#include "fm64.h"
-
-// ---- Unit header definition  --------------------------------------------------------------------
-
+#include "unit.h"
 const __unit_header unit_header_t unit_header = {
-    .header_size = sizeof(unit_header_t),                  // leave as is, size of this header
-    .target = UNIT_TARGET_PLATFORM | k_unit_module_synth,  // target platform and module for this unit
-    .api = UNIT_API_VERSION,                               // logue sdk API version against which unit was built
-    .dev_id = 0x656B7544U,                                        // developer identifier
-    .unit_id = 0x34364D46U,                                       // Id for this unit, should be unique within the scope of a given dev_id
-    .version = 0x00000002U,                                // This unit's version: major.minor.patch (major<<16 minor<<8 patch).
-    .name = "FM64",                                       // Name for this unit, will be displayed on device
-    .num_presets = 32,                                      // Number of internal presets this unit has
-    .num_params = 1,                                       // Number of parameters for this unit, max 24
+    .header_size = sizeof(unit_header_t),
+    .target = UNIT_TARGET_PLATFORM | k_unit_module_synth,
+    .api = UNIT_API_VERSION,
+    .dev_id = 0x656B7544U,
+    .unit_id = 0x34364D46U,
+    .version = 0x00020004U,
+    .name = "FM64",
+    .num_presets = 0,
+    .num_params = 24,
     .params = {
-        // Format: min, max, center, default, type, fractional, frac. type, <reserved>, name
+        {0, 127, 0, 60, k_unit_param_type_midi_note, 0, k_unit_param_frac_mode_fixed, 0, {"Note"}},
+        {0, 32767, 0, 0, k_unit_param_type_strings, 0, k_unit_param_frac_mode_fixed, 0, {"Voice"}},
+        {0, 423, 0, 0, k_unit_param_type_strings, 0, k_unit_param_frac_mode_fixed, 0, {"Mode"}},
+        {-100, 100, 0, 0, k_unit_param_type_cents, 0, k_unit_param_frac_mode_fixed, 0, {"Detune"}},
 
-        // See common/runtime.h for type enum and unit_param_t structure
-/*
-        // Page 1
-        // percent param with .5 precision e.g.: "25.0%", "50.5%"
-        {0, (100 << 1), 0, (25 << 1), k_unit_param_type_percent, 1, 0, 0, {"PARAM1"}},
-        // untyped bipolar parameter centered at 0 e.g.: "-5", "0", "2"
-        {-5, 5, 0, 0, k_unit_param_type_none, 0, 0, 0, {"PARAM2"}},
-        // pan parameter e.g.: "L50", "C", "R100"
-        {-100, 100, 0, 0, k_unit_param_type_pan, 0, 0, 0, {"PARAM3"}},
-        // blank parameter, leaves that parameter slot blank in UI. Use when
-        // want to align some params to next page
+        {0, 85, 0,0, k_unit_param_type_strings, 0, k_unit_param_frac_mode_fixed, 0, {"Alg."}},
+        {0, 32767, 0, 0, k_unit_param_type_strings, 0, k_unit_param_frac_mode_fixed, 0, {"C.Wave"}},
+        {0, 32767, 0, 0, k_unit_param_type_strings, 0, k_unit_param_frac_mode_fixed, 0, {"M.Wave"}},
         {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}},
 
-        // Page 2
-        // string enum parameter, unit_get_param_str_value will be called with
-        // numerical value to obtain string to display
-        {0, 9, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"PARAM4"}},
-        // bitmap enum parameter, unit_get_param_bmp_value will be called with
-        // numerical value to obtain the bitmap to display
-        // Note: bitmap specifications not final yet, and not implemented yet in
-        // UI
-        {0, 9, 0, 0, k_unit_param_type_bitmaps, 0, 0, 0, {"PARAM5"}},
-        {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}},
-        {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}},
-*/
-        {0, (BANK_COUNT * 32 - 1), 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Voice"}},
-        {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}},
-        {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}},
-        {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}},
-        {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}},
-        {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}},
-        {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}},
-        {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}},
-        // Page 3
-        {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}},
-        {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}},
-        {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}},
-        {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}},
+        {-112, 128, 0, 0, k_unit_param_type_oct, 4, k_unit_param_frac_mode_fixed, 0, {"FB1 offs"}},
+        {0, 36, 0, 0, k_unit_param_type_strings, 0, k_unit_param_frac_mode_fixed, 0, {"FB1 path"}},
+        {-112, 128, 0, 0, k_unit_param_type_oct, 4, k_unit_param_frac_mode_fixed, 0, {"FB2 offs"}},
+        {0, 36, 0, 0, k_unit_param_type_strings, 0, k_unit_param_frac_mode_fixed, 0, {"FB2 path"}},
 
-        // Page 4
-        {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}},
-        {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}},
-        {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}},
-        {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}},
+        {-396, 396, 0, 0, k_unit_param_type_oct, 2, k_unit_param_frac_mode_fixed, 0, {"C.Level"}},
+        {-396, 396, 0, 0, k_unit_param_type_oct, 2, k_unit_param_frac_mode_fixed, 0, {"M.Level"}},
+        {-396, 396, 0, 0, k_unit_param_type_oct, 2, k_unit_param_frac_mode_fixed, 0, {"C.Rate"}},
+        {-396, 396, 0, 0, k_unit_param_type_oct, 2, k_unit_param_frac_mode_fixed, 0, {"M.Rate"}},
 
-        // Page 5
-        {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}},
-        {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}},
-        {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}},
-        {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}},
+        {-396, 396, 0, 0, k_unit_param_type_oct, 2, k_unit_param_frac_mode_fixed, 0, {"C.KLS"}},
+        {-396, 396, 0, 0, k_unit_param_type_oct, 2, k_unit_param_frac_mode_fixed, 0, {"M.KLS"}},
+        {-112, 112, 0, 0, k_unit_param_type_oct, 4, k_unit_param_frac_mode_fixed, 0, {"C.KRS"}},
+        {-112, 112, 0, 0, k_unit_param_type_oct, 4, k_unit_param_frac_mode_fixed, 0, {"M.KRS"}},
 
-        // Page 6
-        {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}},
-        {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}},
-        {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}},
-        {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}}}};
+        {-112, 112, 0, 0, k_unit_param_type_oct, 4, k_unit_param_frac_mode_fixed, 0, {"C.KVS"}},
+        {-112, 112, 0, 0, k_unit_param_type_oct, 4, k_unit_param_frac_mode_fixed, 0, {"M.KVS"}},
+        {-100, 100, 0, 0, k_unit_param_type_cents, 0, k_unit_param_frac_mode_fixed, 0, {"C.Det."}},
+        {-100, 100, 0, 0, k_unit_param_type_cents, 0, k_unit_param_frac_mode_fixed, 0, {"M.Det."}}
+    }
+};

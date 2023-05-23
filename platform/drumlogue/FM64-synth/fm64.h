@@ -2,8 +2,8 @@
  * File: fm64.h
  *
  * DX7/DX21/DX11-series data structures
- *
- * 2020-2022 (c) Oleg Burdaev
+ * 
+ * 2020-2023 (c) Oleg Burdaev
  * mailto: dukesrg@gmail.com
  *
  */
@@ -12,20 +12,18 @@
 
 #include <stdint.h>
 
+#include "attributes.h"
+#include "fastpow.h"
+
 //#define TWEAK_ALG //use reserved bits for extended algorithms count support
 //#define TWEAK_WF //use reserved bits for extended waveforms count support
-
-#ifndef BANK_COUNT
-  #define BANK_COUNT 4
-#endif
-
-#define BANK_SIZE 32
 
 #define DX7_OPERATOR_COUNT 6
 #define DX11_OPERATOR_COUNT 4
 #define EG_STAGE_COUNT 4
 #define DX7_PEG_STAGE_COUNT 4
 #define DX11_PEG_STAGE_COUNT 3
+#define VOICE_NAME_SIZE 10
 
 #define NOTE_A_1 21
 #define NOTE_C1 36
@@ -153,7 +151,7 @@ static const uint8_t dx7_algorithm[][DX7_OPERATOR_COUNT] = {
   {0b00000000, 0b00000000, 0b00000011, 0b10000100, 0b10000000, 0b10000000},
   {0b00000000, 0b00000000, 0b00000010, 0b10000101, 0b10000000, 0b10000000},
   {0b00000000, 0b00000001, 0b10000010, 0b00100011, 0b10001000, 0b10001000},
-//  {0b00000000, 0b00000000, 0b10000011, 0b00100011, 0b10001000, 0b10001000}, //41 = 20 DX7
+  {0b00000000, 0b00000000, 0b10000011, 0b00100011, 0b10001000, 0b10001000}, //41 = 20 DX7
   {0b00000000, 0b10000001, 0b00000000, 0b10000100, 0b00000000, 0b10010000},
   {0b00100001, 0b00000001, 0b10000011, 0b10000011, 0b10000011, 0b10000011},
   {0b00100000, 0b10000001, 0b10000001, 0b10000001, 0b10000001, 0b10000001},
@@ -193,9 +191,8 @@ static const uint8_t level_lut[] = {
   0, 5, 9, 13, 17, 20, 23, 25, 27, 29, 31, 33, 35, 37, 39, 41, 42, 43, 45, 46
 };
 
-static inline __attribute__((optimize("Ofast"), always_inline))
-uint8_t scale_level(uint8_t x) {
-    return x < sizeof(level_lut) ? level_lut[x] : x + (127 - 99);
+static fast_inline uint8_t scale_level(uint8_t x) {
+  return x < sizeof(level_lut) ? level_lut[x] : x + (127 - 99);
 }
 
 static const int8_t pitch_level_lut_low[] = {
@@ -203,8 +200,7 @@ static const int8_t pitch_level_lut_low[] = {
   38, 40, 43, 46, 49, 53, 58, 65, 73, 82, 92, 103, 115 //, 128
 };
 
-static inline __attribute__((optimize("Ofast"), always_inline))
-int32_t scale_pitch_level(uint8_t x) {
+static fast_inline int32_t scale_pitch_level(uint8_t x) {
   if (x < 17)
     return pitch_level_lut_low[x];
   if (x < 86)
@@ -221,13 +217,13 @@ static const uint8_t pitch_rate_lut[] = {
   153, 159, 165, 171, 178, 185, 193, 202, 211, 231, 243, 253, 255
 };
 
-static inline __attribute__((optimize("Ofast"), always_inline))
-#if defined(PEG_RATE_LUT) || !defined(POW2F)
+static fast_inline
+#ifdef PEG_RATE_LUT
 uint8_t scale_pitch_rate(uint8_t x) {
   return pitch_rate_lut[x];
 #else
 float scale_pitch_rate(uint8_t x) {
-  return 5.f * POW2F(x * .058f) - 4.f;
+  return 5.f * fastpow2(x * .058f) - 4.f;
 #endif
 }
 
@@ -242,9 +238,53 @@ static const float dx11_ratio_lut[64] = {
   15.7f, 16.96f, 17.27f, 17.3f, 18.37f, 18.84f, 19.03f, 19.78f,
   20.41f, 20.76f, 21.20f, 21.98f, 22.49f, 23.55f, 24.22f, 25.95f
 };
+
+static const uint8_t dx11_r1_lut[] = {
+  0, 15, 18, 21, 24, 27, 31, 34, 37, 40, 44, 47, 51, 54, 57, 60,
+  64, 67, 71, 74, 77, 80, 83, 85, 87, 89, 91, 93, 95, 96, 98, 99
+};
+
+static const uint8_t dx11_r2_lut[] = {
+  0, 10, 13, 16, 19, 21, 24, 27, 30, 33, 36, 39, 42, 45, 48, 51,
+  54, 57, 60, 63, 66, 69, 72, 75, 78, 81, 84, 87, 90, 93, 96, 99
+};
+
+static const uint8_t dx11_r4_lut[] = {
+  0, 21, 27, 32, 38, 43, 49, 54, 60, 65, 71, 76, 82, 87, 94, 99
+};
+
+static fast_inline uint8_t dx11_rate(uint32_t r, uint8_t x) {
+  switch(r) {
+    case 0:
+      x = dx11_r1_lut[x];
+      break;
+    case 3:
+      x = dx11_r4_lut[x];
+      break;
+    default:
+      x = dx11_r2_lut[x];
+  }
+    return x;
+}
+
+static const uint8_t dx11_d1l_lut[] = {
+  0, 35, 39, 44, 48, 53, 57, 62, 66, 71, 75, 80, 84, 89, 93, 99
+};
+
+static fast_inline uint8_t dx11_d1l(uint8_t x) {
+  return dx11_d1l_lut[x];
+}
+
+static const uint8_t dx11_level_lut[] = {
+  0, 3, 4, 5, 7, 8, 10, 11, 12, 13, 14, 15, 16, 18, 19, 20, 21, 22, 24, 25
+};
+
+static fast_inline uint8_t scale_dx11_level(uint8_t x) {
+  return x < sizeof(dx11_level_lut) ? dx11_level_lut[x] : x < 92 ? x + 7: 99;
+}
 #endif
 
-typedef struct dx7_operator_t {
+struct dx7_operator_t {
   uint8_t r[EG_STAGE_COUNT]; //EG rates
   uint8_t l[EG_STAGE_COUNT]; //EG levels
   uint8_t bp; //Break point
@@ -268,9 +308,9 @@ typedef struct dx7_operator_t {
   uint8_t pc:5; //Frequency coarse
   uint8_t :0;
   uint8_t pf; //Frequency fine
-} dx7_operator_t;
+};
 
-typedef struct dx7_voice_t {
+struct dx7_voice_t {
   dx7_operator_t op[DX7_OPERATOR_COUNT];
   uint8_t pr[EG_STAGE_COUNT]; //PEG rates
   uint8_t pl[EG_STAGE_COUNT]; //PEG levels
@@ -292,10 +332,10 @@ typedef struct dx7_voice_t {
   uint8_t lpms:3; //LFO pitch modulation sensitivity
   uint8_t :0;
   uint8_t trnp; //Transpose
-  char vnam[10]; //Voice name
-} dx7_voice_t;
+  char vnam[VOICE_NAME_SIZE]; //Voice name
+};
 
-typedef struct dx11_operator_t {
+struct dx11_operator_t {
   uint8_t r[EG_STAGE_COUNT]; //EG rates
   uint8_t d1l; //EG decay 1 level
   uint8_t ls; //Level scaling
@@ -308,9 +348,9 @@ typedef struct dx11_operator_t {
   uint8_t det:3; //Detune
   uint8_t rs:2; //Rate scaling
   uint8_t :0;
-} dx11_operator_t;
+};
 
-typedef struct dx11_voice_t {
+struct dx11_voice_t {
   dx11_operator_t op[DX11_OPERATOR_COUNT];
   uint8_t alg:3; //Algorithm selector
   uint8_t fbl:3; //Feedback level
@@ -345,7 +385,7 @@ typedef struct dx11_voice_t {
   uint8_t bcampli; //Breath controller amplitude modulation range
   uint8_t bcpbias; //Breath controller pitch bias range
   uint8_t bcebias; //Breath controller eg bias range
-  char vnam[10]; //Voice name
+  char vnam[VOICE_NAME_SIZE]; //Voice name
   uint8_t pr[DX11_PEG_STAGE_COUNT]; //PEG rates
   uint8_t pl[DX11_PEG_STAGE_COUNT]; //PEG levels
   struct {
@@ -365,15 +405,9 @@ typedef struct dx11_voice_t {
   uint8_t fcpitch; //Foot controller pitch
   uint8_t fcampli; //Foot controller attribute
   uint8_t unused[44];
-} dx11_voice_t;
+};
 
-static const __attribute__((used, section("custom_data")))
-union {
+union dx_voice_t {
   dx7_voice_t dx7;
   dx11_voice_t dx11;
-} dx_voices[BANK_COUNT][BANK_SIZE] = {};
-
-#ifdef CUSTOM_ALGORITHM_COUNT
-static const __attribute__((used, section(".hooks")))
-uint8_t custom_algorithm[CUSTOM_ALGORITHM_COUNT][DX7_OPERATOR_COUNT][DX7_OPERATOR_COUNT + 1] = {};
-#endif
+};

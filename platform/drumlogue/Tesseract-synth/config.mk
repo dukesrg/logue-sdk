@@ -24,7 +24,7 @@ ASMXSRC =
 # Include Paths
 #
 
-UINCDIR  = ../fastapprox/fastapprox/src
+UINCDIR  = ../inc ../fastapprox/fastapprox/src
 
 ##############################################################################
 # Library Paths
@@ -44,4 +44,3 @@ ULIBS += -lc
 #
 
 UDEFS = -DPARAM_COUNT=24
-
