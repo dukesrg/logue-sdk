@@ -19,8 +19,12 @@ const __unit_header unit_header_t unit_header = {
     .version = 0x00000001U,                                // This unit's version: major.minor.patch (major<<16 minor<<8 patch).
     .name = "Tesseract",                                       // Name for this unit, will be displayed on device
     .num_presets = 0,                                      // Number of internal presets this unit has
-    .num_params = 23,                                       // Number of parameters for this unit, max 24
+    .num_params = PARAM_COUNT,                                       // Number of parameters for this unit, max 24
     .params = {
+        {0, 127, 0, 60, k_unit_param_type_midi_note, 0, k_unit_param_frac_mode_fixed, 0, {"Note"}},
+        {0, 32767, 0, 0, k_unit_param_type_strings, 0, k_unit_param_frac_mode_fixed, 0, {"Wave"}},        
+        {0, 624, 0, 0, k_unit_param_type_strings, 0, k_unit_param_frac_mode_fixed, 0, {"Type"}},
+        {0, 80, 0, 0, k_unit_param_type_strings, 0, k_unit_param_frac_mode_fixed, 0, {"Overflow"}},
 // Position X Y Z W
         {0, (63 << 9), 0, 0, k_unit_param_type_none, 9, k_unit_param_frac_mode_fixed, 0, {"Pos X"}},
         {0, (63 << 9), 0, 0, k_unit_param_type_none, 9, k_unit_param_frac_mode_fixed, 0, {"Pos Y"}},
@@ -36,19 +40,14 @@ const __unit_header unit_header_t unit_header = {
         {-(63 << 9), (63 << 9), 0, 0, k_unit_param_type_none, 9, k_unit_param_frac_mode_fixed, 0, {"Depth Y"}},
         {-(63 << 9), (63 << 9), 0, 0, k_unit_param_type_none, 9, k_unit_param_frac_mode_fixed, 0, {"Depth Z"}},
         {-(63 << 9), (63 << 9), 0, 0, k_unit_param_type_none, 9, k_unit_param_frac_mode_fixed, 0, {"Depth W"}},
-// LFO mode X Y Z W
-        {0, 48, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Mode X"}},
-        {0, 48, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Mode Y"}},
-        {0, 48, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Mode Z"}},
-        {0, 48, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Mode W"}},
+// LFO wave X Y Z W
+        {0, 32767, 0, 0, k_unit_param_type_strings, 0, k_unit_param_frac_mode_fixed, 0, {"Form X"}}, 
+        {0, 32767, 0, 0, k_unit_param_type_strings, 0, k_unit_param_frac_mode_fixed, 0, {"Form Y"}}, 
+        {0, 32767, 0, 0, k_unit_param_type_strings, 0, k_unit_param_frac_mode_fixed, 0, {"Form Z"}}, 
+        {0, 32767, 0, 0, k_unit_param_type_strings, 0, k_unit_param_frac_mode_fixed, 0, {"Form W"}}, 
 // Dimension X Y Z W
         {1, 4096, 1, 1, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {"Dim X"}},
         {1, 4096, 1, 1, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {"Dim Y"}},
         {1, 4096, 1, 1, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {"Dim Z"}},
         {1, 4096, 1, 1, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {"Dim W"}},
-// Wave bank sample length offset
-        {0, 255, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Sample"}},
-        {0, 12, 0, 8, k_unit_param_type_strings, 0, 0, 0, {"Size"}},
-        {0, 0x7FFF, 0, 0, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {"Offset"}},
-        {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}}
 }};

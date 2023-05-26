@@ -23,6 +23,7 @@
 #include "attributes.h"
 #include "fastpow.h"
 #include "arm.h"
+#include "wavetable.h"
 
 #define TWEAK_ALG //use reserved bits for extended algorithms count support
 #define TWEAK_WF //use reserved bits for extended waveforms count support
@@ -194,16 +195,6 @@ enum {
   state_noteoff = 2
 };
 
-static const char SAMPLE_BANK_NAMES[][5] = {
-  "CH",
-  "OH",
-  "RS",
-  "CP",
-  "MISC",
-  "USER",
-  "EXP"
-};
-
   static const dx_voice_t *dx7_init_voice_ptr = (dx_voice_t *)(const uint8_t[]){
     0x63, 0x63, 0x63, 0x63, 0x63, 0x63, 0x63, 0x00, 0x00, 0x00, 0x00, 0x00, 0x38, 0x00, 0x00, 0x02,
     0x00, 0x63, 0x63, 0x63, 0x63, 0x63, 0x63, 0x63, 0x00, 0x00, 0x00, 0x00, 0x00, 0x38, 0x00, 0x00,
@@ -215,41 +206,6 @@ static const char SAMPLE_BANK_NAMES[][5] = {
     0x23, 0x00, 0x00, 0x00, 0x31, 0x18, 0x49, 0x4E, 0x49, 0x54, 0x20, 0x56, 0x4F, 0x49, 0x43, 0x45
   };
 
-  static const float *sin_wave_ptr = (float *)(const uint32_t[]){
-    0x00000000, 0x3CC90AB0, 0x3D48FB30, 0x3D96A905, 0x3DC8BD36, 0x3DFAB273, 0x3E164083, 0x3E2F10A2,
-    0x3E47C5C2, 0x3E605C13, 0x3E78CFCC, 0x3E888E93, 0x3E94A031, 0x3EA09AE5, 0x3EAC7CD4, 0x3EB8442A,
-    0x3EC3EF15, 0x3ECF7BCA, 0x3EDAE880, 0x3EE63375, 0x3EF15AEA, 0x3EFC5D27, 0x3F039C3D, 0x3F08F59B,
-    0x3F0E39DA, 0x3F13682A, 0x3F187FC0, 0x3F1D7FD1, 0x3F226799, 0x3F273656, 0x3F2BEB4A, 0x3F3085BB,
-    0x3F3504F3, 0x3F396842, 0x3F3DAEF9, 0x3F41D870, 0x3F45E403, 0x3F49D112, 0x3F4D9F02, 0x3F514D3D,
-    0x3F54DB31, 0x3F584853, 0x3F5B941A, 0x3F5EBE05, 0x3F61C598, 0x3F64AA59, 0x3F676BD8, 0x3F6A09A7,
-    0x3F6C835E, 0x3F6ED89E, 0x3F710908, 0x3F731447, 0x3F74FA0B, 0x3F76BA07, 0x3F7853F8, 0x3F79C79D,
-    0x3F7B14BE, 0x3F7C3B28, 0x3F7D3AAC, 0x3F7E1324, 0x3F7EC46D, 0x3F7F4E6D, 0x3F7FB10F, 0x3F7FEC43,
-    0x3F800000, 0x3F7FEC43, 0x3F7FB10F, 0x3F7F4E6D, 0x3F7EC46D, 0x3F7E1324, 0x3F7D3AAC, 0x3F7C3B28,
-    0x3F7B14BE, 0x3F79C79D, 0x3F7853F8, 0x3F76BA07, 0x3F74FA0B, 0x3F731447, 0x3F710908, 0x3F6ED89E,
-    0x3F6C835E, 0x3F6A09A7, 0x3F676BD8, 0x3F64AA59, 0x3F61C598, 0x3F5EBE05, 0x3F5B941A, 0x3F584853,
-    0x3F54DB31, 0x3F514D3D, 0x3F4D9F02, 0x3F49D112, 0x3F45E403, 0x3F41D870, 0x3F3DAEF9, 0x3F396842,
-    0x3F3504F3, 0x3F3085BB, 0x3F2BEB4A, 0x3F273656, 0x3F226799, 0x3F1D7FD1, 0x3F187FC0, 0x3F13682A,
-    0x3F0E39DA, 0x3F08F59B, 0x3F039C3D, 0x3EFC5D27, 0x3EF15AEA, 0x3EE63375, 0x3EDAE880, 0x3ECF7BCA,
-    0x3EC3EF15, 0x3EB8442A, 0x3EAC7CD4, 0x3EA09AE5, 0x3E94A031, 0x3E888E93, 0x3E78CFCC, 0x3E605C13,
-    0x3E47C5C2, 0x3E2F10A2, 0x3E164083, 0x3DFAB273, 0x3DC8BD36, 0x3D96A905, 0x3D48FB30, 0x3CC90AB0,
-    0x250D3132, 0xBCC90AB0, 0xBD48FB30, 0xBD96A905, 0xBDC8BD36, 0xBDFAB273, 0xBE164083, 0xBE2F10A2,
-    0xBE47C5C2, 0xBE605C13, 0xBE78CFCC, 0xBE888E93, 0xBE94A031, 0xBEA09AE5, 0xBEAC7CD4, 0xBEB8442A,
-    0xBEC3EF15, 0xBECF7BCA, 0xBEDAE880, 0xBEE63375, 0xBEF15AEA, 0xBEFC5D27, 0xBF039C3D, 0xBF08F59B,
-    0xBF0E39DA, 0xBF13682A, 0xBF187FC0, 0xBF1D7FD1, 0xBF226799, 0xBF273656, 0xBF2BEB4A, 0xBF3085BB,
-    0xBF3504F3, 0xBF396842, 0xBF3DAEF9, 0xBF41D870, 0xBF45E403, 0xBF49D112, 0xBF4D9F02, 0xBF514D3D,
-    0xBF54DB31, 0xBF584853, 0xBF5B941A, 0xBF5EBE05, 0xBF61C598, 0xBF64AA59, 0xBF676BD8, 0xBF6A09A7,
-    0xBF6C835E, 0xBF6ED89E, 0xBF710908, 0xBF731447, 0xBF74FA0B, 0xBF76BA07, 0xBF7853F8, 0xBF79C79D,
-    0xBF7B14BE, 0xBF7C3B28, 0xBF7D3AAC, 0xBF7E1324, 0xBF7EC46D, 0xBF7F4E6D, 0xBF7FB10F, 0xBF7FEC43,
-    0xBF800000, 0xBF7FEC43, 0xBF7FB10F, 0xBF7F4E6D, 0xBF7EC46D, 0xBF7E1324, 0xBF7D3AAC, 0xBF7C3B28,
-    0xBF7B14BE, 0xBF79C79D, 0xBF7853F8, 0xBF76BA07, 0xBF74FA0B, 0xBF731447, 0xBF710908, 0xBF6ED89E,
-    0xBF6C835E, 0xBF6A09A7, 0xBF676BD8, 0xBF64AA59, 0xBF61C598, 0xBF5EBE05, 0xBF5B941A, 0xBF584853,
-    0xBF54DB31, 0xBF514D3D, 0xBF4D9F02, 0xBF49D112, 0xBF45E403, 0xBF41D870, 0xBF3DAEF9, 0xBF396842,
-    0xBF3504F3, 0xBF3085BB, 0xBF2BEB4A, 0xBF273656, 0xBF226799, 0xBF1D7FD1, 0xBF187FC0, 0xBF13682A,
-    0xBF0E39DA, 0xBF08F59B, 0xBF039C3D, 0xBEFC5D27, 0xBEF15AEA, 0xBEE63375, 0xBEDAE880, 0xBECF7BCA,
-    0xBEC3EF15, 0xBEB8442A, 0xBEAC7CD4, 0xBEA09AE5, 0xBE94A031, 0xBE888E93, 0xBE78CFCC, 0xBE605C13,
-    0xBE47C5C2, 0xBE2F10A2, 0xBE164083, 0xBDFAB273, 0xBDC8BD36, 0xBD96A905, 0xBD48FB30, 0xBCC90AB0
-  };
-
   static int32_t sParams[PARAM_COUNT];
 
   static struct {
@@ -257,19 +213,7 @@ static const char SAMPLE_BANK_NAMES[][5] = {
     uint32_t count;
   } DxVoiceBanks[MAX_SAMPLES_LOAD] = {dx7_init_voice_ptr, 1};
 
-  static struct {
-    const float * sample_ptr;
-    char name[6];
-    uint32_t count;
-    uint32_t size_exp;
-  } Wavetables[MAX_SAMPLES_LOAD] = {sin_wave_ptr, "Sine", 1, 8};
-
-  struct wave_t {
-    const float * sample_ptr;
-    float size;
-    uint32_t size_mask;
-    uint32_t size_exp;
-  };
+  static wavetable_t Wavetables;
 
   static struct {
     uint32_t state;
@@ -459,7 +403,6 @@ static const char SAMPLE_BANK_NAMES[][5] = {
   static float32x2x3_t vPhase[POLYPHONY];
 #endif
 
-
   fast_inline const dx_voice_t * getDxVoice(uint32_t index) {
     uint32_t voicebank_idx = 0;
     while (voicebank_idx < sizeof(DxVoiceBanks)/sizeof(DxVoiceBanks[0]) && index >= DxVoiceBanks[voicebank_idx].count && DxVoiceBanks[voicebank_idx].count > 0)
@@ -467,38 +410,6 @@ static const char SAMPLE_BANK_NAMES[][5] = {
     if (voicebank_idx < sizeof(DxVoiceBanks)/sizeof(DxVoiceBanks[0]) && DxVoiceBanks[voicebank_idx].count > 0)
       return &DxVoiceBanks[voicebank_idx].dxvoice_ptr[index];
     return nullptr;
-  }
-
-  fast_inline const char * getWaveName(uint32_t index) {
-    static char name[UNIT_SAMPLE_WRAPPER_MAX_NAME_LEN + 1] = {0};
-    uint32_t wavetable_idx = 0;
-    while (wavetable_idx < sizeof(Wavetables)/sizeof(Wavetables[0]) && index >= Wavetables[wavetable_idx].count && Wavetables[wavetable_idx].count > 0)
-      index -= Wavetables[wavetable_idx++].count;
-    if (wavetable_idx >= sizeof(Wavetables)/sizeof(Wavetables[0]) || Wavetables[wavetable_idx].count <= 0)
-      return nullptr;
-    if (Wavetables[wavetable_idx].count > 1) {
-      sprintf(name, "%s.%d", Wavetables[wavetable_idx].name, index + 1);
-    } else {
-      sprintf(name, "%s", Wavetables[wavetable_idx].name);
-    }
-    return name; 
-  }
-
-  fast_inline wave_t getWave(uint32_t index) {
-    uint32_t wavetable_idx = 0;
-    static wave_t wave;
-    while (wavetable_idx < sizeof(Wavetables)/sizeof(Wavetables[0]) && index >= Wavetables[wavetable_idx].count && Wavetables[wavetable_idx].count > 0)
-      index -= Wavetables[wavetable_idx++].count;
-    if (wavetable_idx < sizeof(Wavetables)/sizeof(Wavetables[0]) && Wavetables[wavetable_idx].count > 0) {
-      wave.size_exp = Wavetables[wavetable_idx].size_exp;
-      wave.sample_ptr = &Wavetables[wavetable_idx].sample_ptr[index << wave.size_exp];
-    } else {
-      wave.size_exp = 8;
-      wave.sample_ptr = sin_wave_ptr;
-    }
-    wave.size = 1 << wave.size_exp;
-    wave.size_mask = wave.size - 1;
-    return wave;
   }
 
   fast_inline float paramScale(int8_t *param, uint32_t synvoice_idx, uint32_t opidx) {
@@ -545,7 +456,7 @@ fast_inline void setWaveform(uint32_t synvoice_idx) {
       waveform_idx = s_op_waveform[synvoice_idx][i];
     else
       waveform_idx--;
-    s_waveform[synvoice_idx][i] = getWave(waveform_idx);
+    s_waveform[synvoice_idx][i] = Wavetables.getWave(waveform_idx);
     s_wave_sample_ptr[synvoice_idx][i] = s_waveform[synvoice_idx][i].sample_ptr;
     s_wave_size[synvoice_idx][i] = s_waveform[synvoice_idx][i].size;
     s_wave_size_mask[synvoice_idx][i] = s_waveform[synvoice_idx][i].size_mask;
@@ -1117,11 +1028,10 @@ void setWaveformPinch() {
     if (desc->output_channels != 2)
       return k_unit_err_geometry;
 
+    Wavetables.init(desc, 0x65766157); // 'Wave'
+
     uint32_t bankcount = desc->get_num_sample_banks();
     uint32_t voicebank_idx = 0;
-    uint32_t wavetable_idx = 0;
-    uint32_t wavesize, namelength;
-    char * lastspace;
     for (uint32_t bank_idx = 0; bank_idx < bankcount; bank_idx++) {
       uint32_t samplecount = desc->get_num_samples_for_bank(bank_idx);
       for (uint32_t sample_idx = 0; sample_idx < samplecount; sample_idx++) {
@@ -1136,25 +1046,6 @@ void setWaveformPinch() {
             DxVoiceBanks[voicebank_idx].dxvoice_ptr = (const dx_voice_t *)sample->sample_ptr;
             DxVoiceBanks[voicebank_idx].count = sample->frames * sample->channels * sizeof(sample->sample_ptr[0]) / sizeof(dx_voice_t);
             voicebank_idx++;
-            break;
-          case 0x65766157:  // 'Wave'
-            Wavetables[wavetable_idx].sample_ptr = sample->sample_ptr;
-            wavesize = 256;
-            if (strlen(sample->name) >= 10 && sscanf((char *)&sample->name[9], " %d", &wavesize) != 1) {
-              if ((lastspace = strrchr((char *)&sample->name[9], ' ')) == nullptr || sscanf(lastspace, " %d", &wavesize) != 1) {
-                strncpy(Wavetables[wavetable_idx].name, (char *)&sample->name[9], sizeof(Wavetables[wavetable_idx].name) - 1);
-              } else {
-                namelength = strlen((char *)&sample->name[9]) - strlen(lastspace);
-                if (namelength > (sizeof(Wavetables[wavetable_idx].name) - 1))
-                  namelength = (sizeof(Wavetables[wavetable_idx].name) - 1);
-                strncpy(Wavetables[wavetable_idx].name, (char *)&sample->name[9], namelength);
-              }
-            } else {
-              sprintf(Wavetables[wavetable_idx].name, "%.1s.%3d", SAMPLE_BANK_NAMES[bank_idx], sample_idx + 1);
-            }
-            Wavetables[wavetable_idx].size_exp = fasterlog2(wavesize);
-            Wavetables[wavetable_idx].count = sample->frames * sample->channels >> Wavetables[wavetable_idx].size_exp;
-            wavetable_idx++;
             break;
           default:
             break;
@@ -2114,7 +2005,7 @@ __unit_callback const char * unit_get_param_str_value(uint8_t id, int32_t value)
       case param_waveform_modulators:
         if (value == 0)
           return "Retain";
-        if ((wnam = getWaveName(value - 1)) != nullptr)
+        if ((wnam = Wavetables.getName(value - 1)) != nullptr)
           return wnam;
         break;
       case param_feedback1_route:

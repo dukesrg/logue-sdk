@@ -1,9 +1,11 @@
-/**
- *  @file unit.cc
- *  @brief drumlogue SDK unit interface
+/*
+ *  File: unit.cc
  *
- *  Copyright (c) 2020-2022 KORG Inc. All rights reserved.
+ *  Tesseract Synth unit.
  *
+ *
+ *  2022-2023 (c) Oleg Burdaev
+ *  mailto: dukesrg@gmail.com
  */
 
 #include "unit.h"  // Note: Include common definitions for all units
@@ -20,8 +22,9 @@
 
 #include "runtime.h"
 #include "attributes.h"
-#include "fastexp.h"
+#include "fastpow.h"
 #include "arm.h"
+#include "wavetable.h"
 
 #define SAMPLERATE_RECIP 2.0833333e-5f  // 1/48000
 #define OCTAVE_RECIP .083333333f        // 1/12
@@ -87,7 +90,11 @@
 // #define veorshrq_s32(a,b) veorq_s32(a, vshrq_n_s32(a, b))
 
 enum {
-  param_position_x = 0U,
+  param_gate_note = 0U,
+  param_waveform_start,
+  param_lfo_mode,
+  param_lfo_overflow,
+  param_position_x,
   param_position_y,
   param_position_z,
   param_position_w,
@@ -99,18 +106,14 @@ enum {
   param_lfo_depth_y,
   param_lfo_depth_z,
   param_lfo_depth_w,
-  param_lfo_mode_x,
-  param_lfo_mode_y,
-  param_lfo_mode_z,
-  param_lfo_mode_w,
+  param_lfo_waveform_x,
+  param_lfo_waveform_y,
+  param_lfo_waveform_z,
+  param_lfo_waveform_w,
   param_dimension_x,
   param_dimension_y,
   param_dimension_z,
   param_dimension_w,
-  //  param_wave_bank_idx,
-  param_wave_sample_idx,
-  param_wave_size,
-  param_wave_offset,
 };
 
 enum {
@@ -134,9 +137,10 @@ enum {
   lfo_overflow_fold,
 };
 
+static wavetable_t Wavetables;
+static wavetable_t LFOs;
+
 static uint8_t sNote;
-static float sVelocity;
-static float sPressure;
 static float32x2_t sAmp;
 static uint32_t sNotePhase;
 static uint32_t sNotePhaseIncrement;
@@ -226,9 +230,9 @@ static struct lfo_t {
 } sLfo;
 
 static float32x4_t sLfoDepth;
-//static uint32_t sLfoMode[DIMENSION_COUNT];
-//static uint32_t sLfoWave[DIMENSION_COUNT];
-//uint32_t sLfoOverflow[DIMENSION_COUNT];
+// static uint32_t sLfoMode[DIMENSION_COUNT];
+// static uint32_t sLfoWave[DIMENSION_COUNT];
+// uint32_t sLfoOverflow[DIMENSION_COUNT];
 static float32x4_t sDimension;
 static float32x4_t sDimensionMax;
 static float32x4_t sDimensionRecip;
@@ -236,8 +240,8 @@ static float32x4_t sDimensionMaxRecip;
 static uint32x4_t sDimensions;
 static uint32x4_t sDimensionScale;
 
-//static unit_runtime_get_num_sample_banks_ptr get_num_sample_banks;
-//static unit_runtime_get_num_samples_for_bank_ptr get_num_samples_for_bank;
+// static unit_runtime_get_num_sample_banks_ptr get_num_sample_banks;
+// static unit_runtime_get_num_samples_for_bank_ptr get_num_samples_for_bank;
 static unit_runtime_get_sample_ptr get_sample;
 static const sample_wrapper_t * sSample;
 static uint32_t sSampleOffset;
@@ -248,7 +252,7 @@ static uint32_t sWaveSizeExpRes;
 static uint32_t sWaveSizeMask;
 static float sWaveSizeRecip;
 static uint32_t sWaveOffset;
-static uint32_t sWaveMaxIndex;
+// static uint32_t sWaveMaxIndex;
 
 /*===========================================================================*/
 /* Private Methods. */
@@ -284,6 +288,35 @@ fast_inline void setDimensions(uint32_t index, uint32_t value) {
 }
 */
 
+fast_inline void noteOn(uint8_t note, uint8_t velocity) {
+  sNote = note;
+  sNotePhaseIncrement = (float)UINT_MAX * fastpow2((sNote + sPitchBend + NOTE_FREQ_OFFSET) * OCTAVE_RECIP);  // f = 2^((note - A4)/12), A4 = #69 = 440Hz
+  sNotePhase = 0;
+  sAmp = vdup_n_f32(velocity * VELOCITY_SENSITIVITY);
+  sLfo.trigger();
+  /*
+      for (uint32_t i = 0; i < DIMENSION_COUNT; i++) {
+        switch (sLfoMode[i]) {
+          case lfo_type_one_shot:
+          case lfo_type_key_trigger:
+            sLfo.reset(i);
+            break;
+          case lfo_type_random:
+            sLfo.reset(i, rand() << 1); // assume GCC RAND_MAX = INT_MAX
+            break;
+          case lfo_type_free_run:
+          default:
+            break;
+        }
+      }
+  */
+}
+
+fast_inline void noteOff(uint8_t note) {
+  (void)note;
+  sAmp = vdup_n_f32(0.f);
+}
+
 __unit_callback int8_t unit_init(const unit_runtime_desc_t * desc) {
   if (!desc)
     return k_unit_err_undef;
@@ -296,23 +329,79 @@ __unit_callback int8_t unit_init(const unit_runtime_desc_t * desc) {
   if (desc->output_channels != 2)
     return k_unit_err_geometry;
 
-  sVelocity = 0.f;
-  sPressure = 1.f;
   sAmp = vdup_n_f32(0.f);
   sNotePhase = 0;
-
-  //    get_num_sample_banks = desc->get_num_sample_banks;
-  //    get_num_samples_for_bank = desc->get_num_samples_for_bank;
-  get_sample = desc->get_sample;
 
   sWaveSize = 1;
   sWaveSizes = vdupq_n_u32(1);
   sWaveSizeExp = 0;
   sWaveSizeExpRes = 32;
   sWaveOffset = 0;
-  sSample = get_sample(USER_BANK, 0);
-  setSampleOffset();
+//  sSample = get_sample(USER_BANK, 0);
+//  setSampleOffset();
 
+  Wavetables.init(desc, 0x65766157); // 'Wave'
+  LFOs.init(desc, 0x734F464C); // 'LFOs'
+/*
+  uint32_t bankcount = desc->get_num_sample_banks();
+  uint32_t lfo_idx = 0;
+  uint32_t wavetable_idx = 0;
+  uint32_t wavesize, namelength;
+  char * lastspace;
+  for (uint32_t bank_idx = 0; bank_idx < bankcount; bank_idx++) {
+    uint32_t samplecount = desc->get_num_samples_for_bank(bank_idx);
+    for (uint32_t sample_idx = 0; sample_idx < samplecount; sample_idx++) {
+      const sample_wrapper_t * sample = desc->get_sample(bank_idx, sample_idx);
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wstrict-aliasing"
+      if (sample == nullptr || sample->sample_ptr == nullptr || sample->channels > 1 || *(uint32_t *)sample->name != unit_header.unit_id)  // 'TESS'
+#pragma GCC diagnostic pop
+        continue;
+      switch (((uint32_t *)sample->name)[1]) {
+        case 0x734F464C:  // 'LFOs'
+          LFOs[lfo_idx].sample_ptr = sample->sample_ptr;
+          wavesize = 256;
+          if (strlen(sample->name) >= 10 && sscanf((char *)&sample->name[9], " %d", &wavesize) != 1) {
+            if ((lastspace = strrchr((char *)&sample->name[9], ' ')) == nullptr || sscanf(lastspace, " %d", &wavesize) != 1) {
+              strncpy(LFOs[lfo_idx].name, (char *)&sample->name[9], sizeof(LFOs[lfo_idx].name) - 1);
+            } else {
+              namelength = strlen((char *)&sample->name[9]) - strlen(lastspace);
+              if (namelength > (sizeof(LFOs[lfo_idx].name) - 1))
+                namelength = (sizeof(LFOs[lfo_idx].name) - 1);
+              strncpy(LFOs[lfo_idx].name, (char *)&sample->name[9], namelength);
+            }
+          } else {
+            sprintf(LFOs[lfo_idx].name, "%.1s.%3d", SAMPLE_BANK_NAMES[bank_idx], sample_idx + 1);
+          }
+          LFOs[lfo_idx].size_exp = fasterlog2(wavesize);
+          LFOs[lfo_idx].count = sample->frames * sample->channels >> LFOs[lfo_idx].size_exp;
+          lfo_idx++;
+          break;
+        case 0x65766157:  // 'Wave'
+          Wavetables[wavetable_idx].sample_ptr = sample->sample_ptr;
+          wavesize = 256;
+          if (strlen(sample->name) >= 10 && sscanf((char *)&sample->name[9], " %d", &wavesize) != 1) {
+            if ((lastspace = strrchr((char *)&sample->name[9], ' ')) == nullptr || sscanf(lastspace, " %d", &wavesize) != 1) {
+              strncpy(Wavetables[wavetable_idx].name, (char *)&sample->name[9], sizeof(Wavetables[wavetable_idx].name) - 1);
+            } else {
+              namelength = strlen((char *)&sample->name[9]) - strlen(lastspace);
+              if (namelength > (sizeof(Wavetables[wavetable_idx].name) - 1))
+                namelength = (sizeof(Wavetables[wavetable_idx].name) - 1);
+              strncpy(Wavetables[wavetable_idx].name, (char *)&sample->name[9], namelength);
+            }
+          } else {
+            sprintf(Wavetables[wavetable_idx].name, "%.1s.%3d", SAMPLE_BANK_NAMES[bank_idx], sample_idx + 1);
+          }
+          Wavetables[wavetable_idx].size_exp = fasterlog2(wavesize);
+          Wavetables[wavetable_idx].count = sample->frames * sample->channels >> Wavetables[wavetable_idx].size_exp;
+          wavetable_idx++;
+          break;
+        default:
+          break;
+      }
+    }
+  }
+*/
   sLfo.init();
   sDimensionScale = vdupq_n_u32(1);
 
@@ -323,8 +412,6 @@ __unit_callback void unit_teardown() {
 }
 
 __unit_callback void unit_reset() {
-  sVelocity = 0.f;
-  sPressure = 1.f;
   sAmp = vdup_n_f32(0.f);
   sNotePhase = 0;
 
@@ -602,21 +689,22 @@ __unit_callback void unit_set_param_value(uint8_t id, int32_t value) {
     case param_lfo_depth_w:
       sLfoDepth = vsetq_lane_f32(value * LFO_DEPTH_SCALE, sLfoDepth, 3);
       break;
-    case param_lfo_mode_x:
-    case param_lfo_mode_y:
-    case param_lfo_mode_z:
-    case param_lfo_mode_w:
-      id &= DIMENSION_COUNT - 1;
-      sLfo.setMode(id, value);
       /*
-              if (value != LFO_MODE_SAMPLE_AND_HOLD) {
-                sLfoMode[id] = lfoMode(value);
-                sLfoWave[id] = lfoWave(value);
-                sLfoOverflow[id] = lfoOverflow(value);
-              } else
-                sLfoMode[id] = lfo_typsample_and_hold;
+          case param_lfo_mode_x:
+          case param_lfo_mode_y:
+          case param_lfo_mode_z:
+          case param_lfo_mode_w:
+            id &= DIMENSION_COUNT - 1;
+            sLfo.setMode(id, value);
+
+      //              if (value != LFO_MODE_SAMPLE_AND_HOLD) {
+      //                sLfoMode[id] = lfoMode(value);
+      //                sLfoWave[id] = lfoWave(value);
+      //                sLfoOverflow[id] = lfoOverflow(value);
+      //              } else
+      //                sLfoMode[id] = lfo_typsample_and_hold;
       */
-      break;
+      //      break;
     case param_dimension_x:
       sDimensions[0] = 1;
     case param_dimension_y:
@@ -632,33 +720,35 @@ __unit_callback void unit_set_param_value(uint8_t id, int32_t value) {
       sDimensionMaxRecip = 1.f / sDimensionMax;
       sDimensionScale = sDimensions * sWaveSizes * sSample->channels * sizeof(float);
       break;
-      //      case param_wave_bank_idx:
-    case param_wave_sample_idx:
-      //        tmp = get_num_sample_banks();
-      //        if (sParams[param_wave_bank_idx] >= tmp)
-      //          sParams[param_wave_bank_idx] = tmp;
-      //        tmp = get_num_samples_for_bank(sParams[param_wave_sample_idx]);
-      //        if (sParams[param_wave_sample_idx] >= tmp)
-      //          sParams[param_wave_sample_idx] = tmp;
-      //        sSample = get_sample(sParams[param_wave_bank_idx], sParams[param_wave_sample_idx]);
-      sSample = get_sample(USER_BANK + (sParams[param_wave_sample_idx] >> 7), sParams[param_wave_sample_idx] & 0x7F);
-    case param_wave_size:
-      sWaveSizeExp = sParams[param_wave_size];
-      sWaveSizeExpRes = 32 - sWaveSizeExp;
-      sWaveSizeMask = sWaveSize - 1;
-      sWaveSize = 1 << sWaveSizeExp;
-      sWaveSizeRecip = 1.f / sWaveSize;
-      sWaveSizes = vsetq_lane_u32(1, vdupq_n_u32(sWaveSize), 0);
-      sDimensionScale = sDimensions * sWaveSizes * (sSample == NULL ? 1 : sSample->channels) * sizeof(float);
-    case param_wave_offset:
-      sWaveOffset = sParams[param_wave_offset];
-      if ((sSample != NULL) && (sSample->frames >> sWaveSize) <= sWaveOffset) {
-        sWaveOffset = (sSample->frames >> sWaveSize) - 1;
-        sParams[param_wave_offset] = sWaveOffset;
-      }
-      setSampleOffset();
-      sWaveMaxIndex = sSample == NULL ? 0 : (sSample->frames >> sWaveSizeExp) - sWaveOffset - 1;
-      break;
+      /*
+            //      case param_wave_bank_idx:
+          case param_wave_sample_idx:
+            //        tmp = get_num_sample_banks();
+            //        if (sParams[param_wave_bank_idx] >= tmp)
+            //          sParams[param_wave_bank_idx] = tmp;
+            //        tmp = get_num_samples_for_bank(sParams[param_wave_sample_idx]);
+            //        if (sParams[param_wave_sample_idx] >= tmp)
+            //          sParams[param_wave_sample_idx] = tmp;
+            //        sSample = get_sample(sParams[param_wave_bank_idx], sParams[param_wave_sample_idx]);
+            sSample = get_sample(USER_BANK + (sParams[param_wave_sample_idx] >> 7), sParams[param_wave_sample_idx] & 0x7F);
+          case param_wave_size:
+            sWaveSizeExp = sParams[param_wave_size];
+            sWaveSizeExpRes = 32 - sWaveSizeExp;
+            sWaveSizeMask = sWaveSize - 1;
+            sWaveSize = 1 << sWaveSizeExp;
+            sWaveSizeRecip = 1.f / sWaveSize;
+            sWaveSizes = vsetq_lane_u32(1, vdupq_n_u32(sWaveSize), 0);
+            sDimensionScale = sDimensions * sWaveSizes * (sSample == NULL ? 1 : sSample->channels) * sizeof(float);
+          case param_wave_offset:
+            sWaveOffset = sParams[param_wave_offset];
+            if ((sSample != NULL) && (sSample->frames >> sWaveSize) <= sWaveOffset) {
+              sWaveOffset = (sSample->frames >> sWaveSize) - 1;
+              sParams[param_wave_offset] = sWaveOffset;
+            }
+            setSampleOffset();
+            sWaveMaxIndex = sSample == NULL ? 0 : (sSample->frames >> sWaveSizeExp) - sWaveOffset - 1;
+            break;
+      */
     default:
       break;
   }
@@ -669,48 +759,60 @@ __unit_callback int32_t unit_get_param_value(uint8_t id) {
 }
 
 __unit_callback const char * unit_get_param_str_value(uint8_t id, int32_t value) {
-  static const char * lfoTypeNames[] = {
-      "One",
-      "Key",
-      "Rnd",
-      "Run",
-      "S&H",
-  };
-
-  static const char * lfoWaveNames[] = {
-      "Sw",
-      "Tr",
-      "Sq",
-      "Si",
-  };
-
-  static const char * lfoOverflowNames[] = {
-      "S",
-      "W",
-      "F",
-  };
-
+  static const char * lfoTypes = "OTRFS";
+  static const char * lfoOverflows = "SWF";
   static char s[UNIT_PARAM_NAME_LEN + 1];
+  static const char * name;
+  static uint32_t overflows[DIMENSION_COUNT];
 
   switch (id) {
-    case param_lfo_mode_x:
-    case param_lfo_mode_y:
-    case param_lfo_mode_z:
-    case param_lfo_mode_w:
-      if (value != LFO_MODE_SAMPLE_AND_HOLD) {
-        sprintf(s, "%s.%s.%s", lfoTypeNames[lfoType(value)], lfoWaveNames[lfoWave(value)], lfoOverflowNames[lfoOverflow(value)]);
-        return s;
-      } else
-        return lfoTypeNames[4];
-    case param_wave_sample_idx:
-      return sSample == NULL ? "---" : sSample->name;
-    case param_wave_size:
-      sprintf(s, "%d", 1 << value);
+      /*
+          case param_lfo_mode_x:
+          case param_lfo_mode_y:
+          case param_lfo_mode_z:
+          case param_lfo_mode_w:
+            if (value != LFO_MODE_SAMPLE_AND_HOLD) {
+              sprintf(s, "%s.%s.%s", lfoTypeNames[lfoType(value)], lfoWaveNames[lfoWave(value)], lfoOverflowNames[lfoOverflow(value)]);
+              return s;
+            } else
+              return lfoTypeNames[4];
+          case param_wave_sample_idx:
+            return sSample == NULL ? "---" : sSample->name;
+          case param_wave_size:
+            sprintf(s, "%d", 1 << value);
+            return s;
+      */
+    case param_lfo_mode:
+      for (uint32_t i = 0; i < DIMENSION_COUNT; i++) {
+        overflows[i] = value % 5;
+        value /= 5;
+      }
+      sprintf(s, "%c.%c.%c.%c", lfoTypes[overflows[0]], lfoTypes[overflows[1]], lfoTypes[overflows[2]], lfoTypes[overflows[3]]);
       return s;
+    case param_lfo_overflow:
+      for (uint32_t i = 0; i < DIMENSION_COUNT; i++) {
+        overflows[i] = value % 3;
+        value /= 3;
+      }
+      sprintf(s, "%c.%c.%c.%c", lfoOverflows[overflows[0]], lfoOverflows[overflows[1]], lfoOverflows[overflows[2]], lfoOverflows[overflows[3]]);
+      return s;
+    case param_waveform_start:
+//      if ((name = getWaveName(Wavetables, value)) != nullptr)
+      if ((name = Wavetables.getName(value)) != nullptr)
+        return name;
+      break;
+    case param_lfo_waveform_x:
+    case param_lfo_waveform_y:
+    case param_lfo_waveform_z:
+    case param_lfo_waveform_w:
+      if ((name = LFOs.getName(value)) != nullptr)
+        return name;
+      break;
     default:
       break;
   }
-  return nullptr;
+  sprintf(s, "%d", value);
+  return s;
 }
 
 __unit_callback const uint8_t * unit_get_param_bmp_value(uint8_t id, int32_t value) {
@@ -724,46 +826,23 @@ __unit_callback void unit_set_tempo(uint32_t tempo) {
 }
 
 __unit_callback void unit_note_on(uint8_t note, uint8_t velocity) {
-  sNote = note;
-  sNotePhaseIncrement = (float)UINT_MAX * fastpow2((sNote + sPitchBend + NOTE_FREQ_OFFSET) * OCTAVE_RECIP);  // f = 2^((note - A4)/12), A4 = #69 = 440Hz
-  sNotePhase = 0;
-  sVelocity = velocity * VELOCITY_SENSITIVITY;
-  sAmp = vdup_n_f32(sVelocity * sPressure);
-  sLfo.trigger();
-  /*
-      for (uint32_t i = 0; i < DIMENSION_COUNT; i++) {
-        switch (sLfoMode[i]) {
-          case lfo_type_one_shot:
-          case lfo_type_key_trigger:
-            sLfo.reset(i);
-            break;
-          case lfo_type_random:
-            sLfo.reset(i, rand() << 1); // assume GCC RAND_MAX = INT_MAX
-            break;
-          case lfo_type_free_run:
-          default:
-            break;
-        }
-      }
-  */
+  noteOn(note, velocity);
 }
 
 __unit_callback void unit_note_off(uint8_t note) {
-  (void)note;
-  sAmp = vdup_n_f32(0.f);
+  noteOff(note);
 }
 
 __unit_callback void unit_gate_on(uint8_t velocity) {
-  sVelocity = velocity * VELOCITY_SENSITIVITY;
-  sAmp = vdup_n_f32(sVelocity * sPressure);
+  noteOn(sParams[param_gate_note], velocity);
 }
 
 __unit_callback void unit_gate_off() {
-  sAmp = vdup_n_f32(0.f);
+  noteOff(0);
 }
 
 __unit_callback void unit_all_note_off() {
-  sAmp = vdup_n_f32(0.f);
+  noteOff(0);
 }
 
 __unit_callback void unit_pitch_bend(uint16_t bend) {
@@ -772,14 +851,12 @@ __unit_callback void unit_pitch_bend(uint16_t bend) {
 }
 
 __unit_callback void unit_channel_pressure(uint8_t pressure) {
-  sPressure = pressure * CONTROL_CHANGE_SENSITIVITY;
-  sAmp = vdup_n_f32(sVelocity * sPressure);
+  sAmp = vdup_n_f32(pressure * CONTROL_CHANGE_SENSITIVITY);
 }
 
 __unit_callback void unit_aftertouch(uint8_t note, uint8_t aftertouch) {
   (void)note;
-  sVelocity = aftertouch * AFTERTOUCH_SENSITIVITY;
-  sAmp = vdup_n_f32(sVelocity * sPressure);
+  sAmp = vdup_n_f32(aftertouch * AFTERTOUCH_SENSITIVITY);
 }
 
 __unit_callback void unit_load_preset(uint8_t idx) {
