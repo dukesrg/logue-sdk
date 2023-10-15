@@ -34,22 +34,34 @@
 
 // #define TO_F32 4.65661287e-10f
 
-#define VELOCITY_SENSITIVITY .0078740157f        // 1/127
-#define CONTROL_CHANGE_SENSITIVITY .0078740157f  // 1/127
-#define AFTERTOUCH_SENSITIVITY .0078740157f      // 1/127
+#define VELOCITY_SENSITIVITY 7.8740157e-3f        // 1/127
+#define CONTROL_CHANGE_SENSITIVITY 7.8740157e-3f  // 1/127
+#define AFTERTOUCH_SENSITIVITY 7.8740157e-3f      // 1/127
 #define PITCH_BEND_CENTER 8192
-#define PITCH_BEND_SENSITIVITY .0001220703125f  // 24/8192
+#define PITCH_BEND_SENSITIVITY 1.220703125e-4f  // 24/8192
 #define DIMENSION_COUNT 4
-#define POSITION_SCALE .001953125f  // 1/512
+
+//#define POSITION_MAX 2048.f
+//#define POSITION_MAX_RECIP 2.44140625e-4f // 1/4096
+#define POSITION_MAX 128
+#define POSITION_MAX_RECIP 3.90625e-3f // 1/256
+
+#define LFO_DEPTH_MAX 128
+#define LFO_DEPTH_MAX_RECIP 7.8125e-3f // 1/128
+
 // #define LFO_RATE_SCALE .001f
 // #define LFO_RATE_SCALE 89.478485f    // 2^32 / 48000 / 1000
-#define LFO_RATE_SCALE 699.05067f         // 2^32 / 48000 / 128
+//#define LFO_RATE_SCALE 699.05067f         // 2^32 / 48000 / 128
+#define LFO_RATE_SCALE 1.62760417e-7f // 1 / 48000 / 128
+#define LFO_RATE_SCALE_DISPLAY 7.8125e-3f // 1 / 128
 #define LFO_RATE_SCALE_TEMPO .022755555f  // 2^32 / 48000 / 60 / 2^16 - for 1/4
 // #define LFO_DEPTH_SCALE .001953125f  // 1/512
-#define LFO_DEPTH_SCALE 9.0949470e-13f  // 1 / 2^31 / 512
+// #define LFO_DEPTH_SCALE 9.0949470e-13f  // 1 / 2^31 / 512
+#define LFO_DEPTH_SCALE 1
 // #define UINTMAX_RECIP 2.3283064e-10f
-#define INTMAX_RECIP 4.65661287e-10f
+//#define INTMAX_RECIP 4.65661287e-10f
 
+/*
 #define LFO_MODE_SAMPLE_AND_HOLD 48
 
 #define USER_BANK 5
@@ -68,6 +80,7 @@
 
 #define ld_f32(a, b) vld1_f32((const float *)((a)[b]))
 #define vld2q_f32_indirect(a) vuzpq_f32(vcombine_f32(ld_f32(a, 0), ld_f32(a, 1)), vcombine_f32(ld_f32(a, 2), ld_f32(a, 3)))
+*/
 
 // #define vaddq_dupq_n_u32(a,b) vaddq_u32(a, vdupq_n_u32(b))
 // #define u32x4(a,b,c,d) vsetq_lane_u32(d, vsetq_lane_u32(c, vsetq_lane_u32(b, vdupq_n_u32(a), 1), 2), 3)
@@ -92,7 +105,7 @@
 enum {
   param_gate_note = 0U,
   param_waveform_start,
-  param_lfo_mode,
+  param_lfo_type,
   param_lfo_overflow,
   param_position_x,
   param_position_y,
@@ -125,29 +138,73 @@ enum {
 };
 
 enum {
-  lfo_wave_sawtooth = 0U,
-  lfo_wave_triangle,
-  lfo_wave_square,
-  lfo_wave_sine,
-};
-
-enum {
-  lfo_overflow_saturate = 0U,
-  lfo_overflow_wrap,
+  lfo_overflow_wrap = 0U,
+  lfo_overflow_saturate,
   lfo_overflow_fold,
 };
 
-static wavetable_t Wavetables;
-static wavetable_t LFOs;
+static wavetable_t WTs;
+static const float *sWTSamplePtrs[1 << DIMENSION_COUNT];
+static float sWTSizes[1 << DIMENSION_COUNT];
+static uint32_t sWTMasks[1 << DIMENSION_COUNT];
 
-static uint8_t sNote;
+static wavetable_t LFOs;
+static const float *sLFOSamplePtrs[DIMENSION_COUNT];
+static float sLFOSizes[DIMENSION_COUNT];
+static uint32_t sLFOMasks[DIMENSION_COUNT];
+
+static float32x4_t sLFOPhase;
+static float32x4_t sLFOPhaseIncrement;
+static float32x4_t sLFODepth;
+static float32x4_t sLFOOutSnH;
+
+static uint32x4_t maskLFOTypeOneShot;
+static uint32x4_t maskLFOTypeKeyTrigger;
+static uint32x4_t maskLFOTypeRandom;
+static uint32x4_t maskLFOTypeFreeRun;
+static uint32x4_t maskLFOTypeSnH;
+static uint32x4_t maskLFOOverflowSaturate;
+static uint32x4_t maskLFOOverflowWrap;
+static uint32x4_t maskLFOOverflowFold;
+
+static float sNote;
 static float32x2_t sAmp;
-static uint32_t sNotePhase;
-static uint32_t sNotePhaseIncrement;
+static float sNotePhase;
+static float sNotePhaseIncrement;
 static float sPitchBend;
 
-static uint32_t sParams[PARAM_COUNT];
+static int32_t sParams[PARAM_COUNT];
 static float32x4_t sPosition;
+
+// static uint32_t sLfoMode[DIMENSION_COUNT];
+// static uint32_t sLfoWave[DIMENSION_COUNT];
+// uint32_t sLfoOverflow[DIMENSION_COUNT];
+static float32x4_t sDimension;
+static float32x4_t sDimensionSaturateLimit;
+static float32x4_t sDimensionMax;
+static float32x4_t sDimensionRecip;
+//static float32x4_t sDimensionMaxRecip;
+static uint32x4_t sDimensions;
+//static uint32x4_t sDimensionScale;
+static uint32x4_t sFraction0Mask;
+
+static uint32x4_t seed = {0x363812fd, 0xbe183480, 0x4740aef7, 0x2a507c5d};
+
+fast_inline float32x4_t randomUni() {
+  seed = veorq_u32(seed, vshlq_n_u32(seed, 13));
+  seed = veorq_u32(seed, vshrq_n_u32(seed, 17));
+  seed = veorq_u32(seed, vshlq_n_u32(seed, 5));
+  return vcvtq_f32_u32(seed) * 2.32831e-10f;
+}
+
+fast_inline float32x4_t randomBi() {
+  seed = veorq_u32(seed, vshlq_n_u32(seed, 13));
+  seed = veorq_u32(seed, vshrq_n_u32(seed, 17));
+  seed = veorq_u32(seed, vshlq_n_u32(seed, 5));
+  return vcvtq_f32_s32(vreinterpretq_s32_u32(seed)) * 4.65661e-10f;
+}
+
+/*
 static struct lfo_t {
   int32x4_t p0, p1, inc;
   uint32x4_t type, wave, overflow;
@@ -228,58 +285,16 @@ static struct lfo_t {
                                                                                             ))))));
   }
 } sLfo;
-
-static float32x4_t sLfoDepth;
-// static uint32_t sLfoMode[DIMENSION_COUNT];
-// static uint32_t sLfoWave[DIMENSION_COUNT];
-// uint32_t sLfoOverflow[DIMENSION_COUNT];
-static float32x4_t sDimension;
-static float32x4_t sDimensionMax;
-static float32x4_t sDimensionRecip;
-static float32x4_t sDimensionMaxRecip;
-static uint32x4_t sDimensions;
-static uint32x4_t sDimensionScale;
-
-// static unit_runtime_get_num_sample_banks_ptr get_num_sample_banks;
-// static unit_runtime_get_num_samples_for_bank_ptr get_num_samples_for_bank;
-static unit_runtime_get_sample_ptr get_sample;
-static const sample_wrapper_t * sSample;
-static uint32_t sSampleOffset;
-static uint32_t sWaveSize;
-static uint32x4_t sWaveSizes;
-static uint32_t sWaveSizeExp;
-static uint32_t sWaveSizeExpRes;
-static uint32_t sWaveSizeMask;
-static float sWaveSizeRecip;
-static uint32_t sWaveOffset;
-// static uint32_t sWaveMaxIndex;
+*/
 
 /*===========================================================================*/
 /* Private Methods. */
 /*===========================================================================*/
-/*
-inline static float getSample(float *samples, uint32_t phase, uint32_t sizeExpRes, uint32_t sizeExpMask, float sizeRecip) {
-  uint32_t x0 = phase >> sizeExpRes;
-  uint32_t x1 = (x0 + 1) & sizeExpMask;
-  float frac = (phase & sizeExpMask) * sizeRecip;
-  float out = samples[x0] + (samples[x1] - samples[x0]) * frac;
-  return out;
-}
 
-inline float getSample(float *samples, float phase, uint32_t size, uint32_t sizeExp, uint32_t sizeExpRes, uint32_t sizeExpMask, float sizeRecip) {
-  float x = phase * size;
-  uint32_t x0 = (uint32_t)x;
-  uint32_t x1 = (x0 + 1) & sizeExpMask;
-  float frac = x - x0;
-  float out = samples[x0] + (samples[x1] - samples[x0]) * frac;
-  return out;
-}
-*/
-fast_inline void setSampleOffset() {
+/*fast_inline void setSampleOffset() {
   sSampleOffset = sSample == NULL ? 0 : ((uint32_t)sSample->sample_ptr + sWaveOffset * sWaveSize * sSample->channels * sizeof(float));
-}
-/*
-fast_inline void setDimensions(uint32_t index, uint32_t value) {
+}*/
+/*fast_inline void setDimensions(uint32_t index, uint32_t value) {
   sDimension[index] = value;
   sDimensionMax = sDimension - 1.f;
   sDimensionRecip = 1.f / sDimension;
@@ -290,26 +305,14 @@ fast_inline void setDimensions(uint32_t index, uint32_t value) {
 
 fast_inline void noteOn(uint8_t note, uint8_t velocity) {
   sNote = note;
-  sNotePhaseIncrement = (float)UINT_MAX * fastpow2((sNote + sPitchBend + NOTE_FREQ_OFFSET) * OCTAVE_RECIP);  // f = 2^((note - A4)/12), A4 = #69 = 440Hz
-  sNotePhase = 0;
+  sNotePhaseIncrement = fastpow2((sNote + sPitchBend + NOTE_FREQ_OFFSET) * OCTAVE_RECIP);
+  sNotePhase = 0.f;
   sAmp = vdup_n_f32(velocity * VELOCITY_SENSITIVITY);
-  sLfo.trigger();
-  /*
-      for (uint32_t i = 0; i < DIMENSION_COUNT; i++) {
-        switch (sLfoMode[i]) {
-          case lfo_type_one_shot:
-          case lfo_type_key_trigger:
-            sLfo.reset(i);
-            break;
-          case lfo_type_random:
-            sLfo.reset(i, rand() << 1); // assume GCC RAND_MAX = INT_MAX
-            break;
-          case lfo_type_free_run:
-          default:
-            break;
-        }
-      }
-  */
+  sLFOPhase = vbslq_f32(maskLFOTypeRandom,
+    randomUni(),
+    vreinterpretq_f32_u32(vbicq_u32(vreinterpretq_u32_f32(sLFOPhase), vorrq_u32(vorrq_u32(maskLFOTypeOneShot, maskLFOTypeKeyTrigger), maskLFOTypeSnH)))
+  );
+  sLFOOutSnH = randomBi();
 }
 
 fast_inline void noteOff(uint8_t note) {
@@ -329,81 +332,8 @@ __unit_callback int8_t unit_init(const unit_runtime_desc_t * desc) {
   if (desc->output_channels != 2)
     return k_unit_err_geometry;
 
-  sAmp = vdup_n_f32(0.f);
-  sNotePhase = 0;
-
-  sWaveSize = 1;
-  sWaveSizes = vdupq_n_u32(1);
-  sWaveSizeExp = 0;
-  sWaveSizeExpRes = 32;
-  sWaveOffset = 0;
-//  sSample = get_sample(USER_BANK, 0);
-//  setSampleOffset();
-
-  Wavetables.init(desc, 0x65766157); // 'Wave'
+  WTs.init(desc, 0x65766157); // 'Wave'
   LFOs.init(desc, 0x734F464C); // 'LFOs'
-/*
-  uint32_t bankcount = desc->get_num_sample_banks();
-  uint32_t lfo_idx = 0;
-  uint32_t wavetable_idx = 0;
-  uint32_t wavesize, namelength;
-  char * lastspace;
-  for (uint32_t bank_idx = 0; bank_idx < bankcount; bank_idx++) {
-    uint32_t samplecount = desc->get_num_samples_for_bank(bank_idx);
-    for (uint32_t sample_idx = 0; sample_idx < samplecount; sample_idx++) {
-      const sample_wrapper_t * sample = desc->get_sample(bank_idx, sample_idx);
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wstrict-aliasing"
-      if (sample == nullptr || sample->sample_ptr == nullptr || sample->channels > 1 || *(uint32_t *)sample->name != unit_header.unit_id)  // 'TESS'
-#pragma GCC diagnostic pop
-        continue;
-      switch (((uint32_t *)sample->name)[1]) {
-        case 0x734F464C:  // 'LFOs'
-          LFOs[lfo_idx].sample_ptr = sample->sample_ptr;
-          wavesize = 256;
-          if (strlen(sample->name) >= 10 && sscanf((char *)&sample->name[9], " %d", &wavesize) != 1) {
-            if ((lastspace = strrchr((char *)&sample->name[9], ' ')) == nullptr || sscanf(lastspace, " %d", &wavesize) != 1) {
-              strncpy(LFOs[lfo_idx].name, (char *)&sample->name[9], sizeof(LFOs[lfo_idx].name) - 1);
-            } else {
-              namelength = strlen((char *)&sample->name[9]) - strlen(lastspace);
-              if (namelength > (sizeof(LFOs[lfo_idx].name) - 1))
-                namelength = (sizeof(LFOs[lfo_idx].name) - 1);
-              strncpy(LFOs[lfo_idx].name, (char *)&sample->name[9], namelength);
-            }
-          } else {
-            sprintf(LFOs[lfo_idx].name, "%.1s.%3d", SAMPLE_BANK_NAMES[bank_idx], sample_idx + 1);
-          }
-          LFOs[lfo_idx].size_exp = fasterlog2(wavesize);
-          LFOs[lfo_idx].count = sample->frames * sample->channels >> LFOs[lfo_idx].size_exp;
-          lfo_idx++;
-          break;
-        case 0x65766157:  // 'Wave'
-          Wavetables[wavetable_idx].sample_ptr = sample->sample_ptr;
-          wavesize = 256;
-          if (strlen(sample->name) >= 10 && sscanf((char *)&sample->name[9], " %d", &wavesize) != 1) {
-            if ((lastspace = strrchr((char *)&sample->name[9], ' ')) == nullptr || sscanf(lastspace, " %d", &wavesize) != 1) {
-              strncpy(Wavetables[wavetable_idx].name, (char *)&sample->name[9], sizeof(Wavetables[wavetable_idx].name) - 1);
-            } else {
-              namelength = strlen((char *)&sample->name[9]) - strlen(lastspace);
-              if (namelength > (sizeof(Wavetables[wavetable_idx].name) - 1))
-                namelength = (sizeof(Wavetables[wavetable_idx].name) - 1);
-              strncpy(Wavetables[wavetable_idx].name, (char *)&sample->name[9], namelength);
-            }
-          } else {
-            sprintf(Wavetables[wavetable_idx].name, "%.1s.%3d", SAMPLE_BANK_NAMES[bank_idx], sample_idx + 1);
-          }
-          Wavetables[wavetable_idx].size_exp = fasterlog2(wavesize);
-          Wavetables[wavetable_idx].count = sample->frames * sample->channels >> Wavetables[wavetable_idx].size_exp;
-          wavetable_idx++;
-          break;
-        default:
-          break;
-      }
-    }
-  }
-*/
-  sLfo.init();
-  sDimensionScale = vdupq_n_u32(1);
 
   return k_unit_err_none;
 }
@@ -412,10 +342,9 @@ __unit_callback void unit_teardown() {
 }
 
 __unit_callback void unit_reset() {
+  sNotePhase = 0.f;
   sAmp = vdup_n_f32(0.f);
-  sNotePhase = 0;
-
-  sLfo.init();
+  sLFOPhase = vdupq_n_f32(0.f);
 }
 
 __unit_callback void unit_resume() {
@@ -424,19 +353,189 @@ __unit_callback void unit_resume() {
 __unit_callback void unit_suspend() {
 }
 
+fast_inline float calcPosition(int32_t position, int32_t dimension) {
+  return POSITION_MAX_RECIP * (position + POSITION_MAX) * dimension - (dimension == 1 ? 0.f : .5f);
+}
+
+fast_inline float calcLfoDepth(int32_t depth, int32_t dimension) {
+  return depth * dimension * LFO_DEPTH_MAX_RECIP * LFO_DEPTH_SCALE * .5f;
+}
+
+/*
+static const float *s_wave_sample_ptr[DIMENSION_COUNT][2];
+static float s_wave_size[DIMENSION_COUNT][2];
+static uint32_t s_wave_size_mask[DIMENSION_COUNT][2];
+static uint32_t s_wave_size_exp[DIMENSION_COUNT][2];
+static uint32_t s_wave_size_frac[DIMENSION_COUNT][2];
+*/
+/*
+static fast_inline void setWavePosition(uint32_t index, float position) {
+  if (position < 0.f) //vclrq_f32 vdupq_n_f32 vbslq_f32 vdupa_n_f32 vaddq_f32  
+    position += sParams[param_dimension_x + index];
+  uint32_t p0 = ((uint32_t)position) % sParams[param_dimension_x + index];
+  uint32_t p1 = ((p0 + 1) % sParams[param_dimension_x + index]);
+  sPositions[index][0] = p0 * sDimensions[index]; //vmulq_f32 vmulq_f32
+  sPositions[index][1] = p1 * sDimensions[index];
+  sFractions[index][1] = position - (uint32_t)position; // vcvtq_f32_u32, vsubq_f32
+  sFractions[index][0] = 1.f - sFractions[index][1];
+//  sFractions[index][0] = sParams[param_dimension_x + index] == 1 ? 0.f : (1.f - sFractions[index][1]); //vceqq_u32 vdupq_n_u32 vbslq_s32 vdupq_n_f32 vsubq_f32
+}
+*/
+/*
+fast_inline float wave(wave_t *w, float x) {
+  const float x0f = x * w->size;
+  const uint32_t x0i = x0f;
+  const uint32_t x0 = x0i & w->size_mask;
+//  const uint32_t x1 = (x0 + 1) & w->size_mask;
+  const uint32_t x1 = (x0i + 1) & w->size_mask;
+//  const float res = w->sample_ptr[x0] + (x0f - x0i) * (w->sample_ptr[x1] - w->sample_ptr[x0]);
+  const float frac1 = x0f - x0i;
+  const float frac0 = 1.f - frac1;
+  const float res = w->sample_ptr[x0] * frac0 + w->sample_ptr[x1] * frac1;
+  return res;
+}
+*/
+fast_inline float32x4_t wave4x(const float **sample_ptr, float32x4_t size, uint32x4_t size_mask, float x) {
+  const float32x4_t x0f = vmulq_n_f32(size, x);
+  const uint32x4_t x0i = vcvtq_u32_f32(x0f);
+  const uint32x4_t x1i  = x0i + 1;
+  const float32x4_t frac1 = x0f - vcvtq_f32_u32(x0i);
+  const float32x4_t frac0 = 1.f - frac1;
+  const uint32x4_t x0 = x0i & size_mask; 
+  const uint32x4_t x1 = x1i & size_mask;
+  const float32x4_t w0 = {sample_ptr[0][x0[0]], sample_ptr[1][x0[1]], sample_ptr[2][x0[2]], sample_ptr[3][x0[3]]};
+  const float32x4_t w1 = {sample_ptr[0][x1[0]], sample_ptr[1][x1[1]], sample_ptr[2][x1[2]], sample_ptr[3][x1[3]]};
+  return w0 * frac0 + w1 * frac1;
+}
+
+fast_inline float32x4_t wave4x(const float **sample_ptr, float32x4_t size, uint32x4_t size_mask, float32x4_t x) {
+  const float32x4_t x0f = size * x;
+  const uint32x4_t x0i = vcvtq_u32_f32(x0f);
+  const uint32x4_t x1i  = x0i + 1;
+  const float32x4_t frac1 = x0f - vcvtq_f32_u32(x0i);
+  const float32x4_t frac0 = 1.f - frac1;
+  const uint32x4_t x0 = x0i & size_mask; 
+  const uint32x4_t x1 = x1i & size_mask;
+  const float32x4_t w0 = {sample_ptr[0][x0[0]], sample_ptr[1][x0[1]], sample_ptr[2][x0[2]], sample_ptr[3][x0[3]]};
+  const float32x4_t w1 = {sample_ptr[0][x1[0]], sample_ptr[1][x1[1]], sample_ptr[2][x1[2]], sample_ptr[3][x1[3]]};
+  return w0 * frac0 + w1 * frac1;
+}
+
+fast_inline void preloadWave(uint32_t index, uint32_t x) {
+  const wave_t w = WTs.getWave(x);
+  sWTSamplePtrs[index] = w.sample_ptr;
+  sWTSizes[index] = w.size;
+  sWTMasks[index] = w.size_mask;
+}
+
+fast_inline void preloadWaveQT(uint32_t index, uint32x4_t x) {
+  preloadWave(index + 4 * 0, x[0]);
+  preloadWave(index + 4 * 1, x[1]);
+  preloadWave(index + 4 * 2, x[2]);
+  preloadWave(index + 4 * 3, x[3]);
+}
+
 __unit_callback void unit_render(const float * in, float * out, uint32_t frames) {
   (void)in;
   float * __restrict out_p = out;
   const float * out_e = out_p + (frames << 1);  // assuming stereo output
+    
+//  float32x4_t vLFOOut = wave4x(sLFOSamplePtrs, *(float32x4_t *)&sLFOSizes, *(uint32x4_t *)&sLFOMasks, sLFOPhase);
+  float32x4_t vLFOOut = vbslq_f32(maskLFOTypeSnH,
+    sLFOOutSnH,
+    wave4x(sLFOSamplePtrs, *(float32x4_t *)&sLFOSizes, *(uint32x4_t *)&sLFOMasks, sLFOPhase)
+  );
+  float32x4_t sLFOPhaseOld = sLFOPhase;
+  sLFOPhase += sLFOPhaseIncrement * (float)frames;
+  sLFOPhase -= vcvtq_f32_u32(vcvtq_u32_f32(sLFOPhase));
+  uint32x4_t maskLFOPhaseOverflow = vcltq_f32(sLFOPhase, sLFOPhaseOld);
+  sLFOPhase = vbslq_f32(vandq_u32(maskLFOPhaseOverflow, maskLFOTypeOneShot),
+    vreinterpretq_f32_u32(vdupq_n_u32(0x3f7fffff)),
+    sLFOPhase
+  );
+  sLFOOutSnH = vbslq_f32(maskLFOPhaseOverflow, randomBi(), sLFOOutSnH);
 
-  //    if (sSample == NULL) {
+  float32x4_t vPosition = sPosition;
+  vPosition += vLFOOut * sLFODepth;
+  vPosition = vbslq_f32(maskLFOOverflowSaturate,
+    vminq_f32(sDimensionSaturateLimit, vmaxq_f32(vdupq_n_f32(0.f), vPosition)),
+    vPosition
+  );
+  vPosition += vreinterpretq_f32_u32(vbicq_u32(
+    vreinterpretq_u32_f32(sDimensionMax),
+    vcgeq_f32(vPosition, vdupq_n_f32(0.f))
+  )); // Underflow wrap
+  uint32x4_t vp0 = vcvtq_u32_f32(vPosition);
+  uint32x4_t vp1 = vp0 + 1;
+  float32x4_t vp0f = vcvtq_f32_u32(vp0);
+  float32x4_t vp1f = vcvtq_f32_u32(vp1);
+  float32x4_t vFractions1 = vPosition - vp0f;
+  float32x4_t vFractions0 = 1.f - vFractions1;
+/*
+  float32x4_t vFractions0 = vreinterpretq_f32_u32(vbicq_u32(
+    vreinterpretq_u32_f32(1.f - vFractions1),
+    vtstq_u32(vreinterpretq_u32_f32(sDimension), vreinterpretq_u32_f32(vdupq_n_f32(1.f)))
+//    vceqq_f32(sDimension, vdupq_n_f32(1.f))
+  )); // Dimention = 1 workaround
+*/
+/*  float32x4_t vFractions1 = vbslq_f32(vandq_u32(sFraction0Mask, vceqq_f32(vPosition, vp0f)),
+    vdupq_n_f32(1.f),
+    vPosition - vp0f
+  );
+  float32x4_t vFractions0 = vreinterpretq_f32_u32(vbicq_u32(
+    vreinterpretq_u32_f32(1.f - vFractions1),
+    sFraction0Mask
+  )); // Dimention = 1 workaround
+*/
+  vFractions0 = vbslq_f32(sFraction0Mask,
+    vminq_f32(vPosition, vdupq_n_f32(1.f)),
+    vFractions0
+  );
+  vFractions1 = vreinterpretq_f32_u32(vbicq_u32(
+    vreinterpretq_u32_f32(vFractions1),
+    sFraction0Mask
+  ));
+
+  float32x4x2_t vFractions = vzipq_f32(vFractions0, vFractions1); 
+  vp0 -= *(uint32x4_t *)&sParams[param_dimension_x] * vcvtq_u32_f32(vp0f * sDimensionRecip);
+  vp1 -= *(uint32x4_t *)&sParams[param_dimension_x] * vcvtq_u32_f32(vp1f * sDimensionRecip);
+  uint32x4_t vPositions0 = vp0 * sDimensions;
+  uint32x4_t vPositions1 = vp1 * sDimensions;
+
+  uint32x2x2_t p0 = vzip_u32(vget_low_u32(vPositions0), vget_low_u32(vPositions1));
+  uint32x2_t r0 = sParams[param_waveform_start] + p0.val[0];
+  uint32x2x2_t p1 = vzip_u32(p0.val[1], p0.val[1]);
+  uint32x4_t r1 = vcombine_u32(r0, r0) + vcombine_u32(p1.val[0], p1.val[1]);
+  uint32x4_t r2 = r1 + vdupq_lane_u32(vget_high_u32(vPositions0), 0);
+  uint32x4_t r3 = vdupq_lane_u32(vget_high_u32(vPositions0), 1);
+  uint32x4_t r4 = r1 + vdupq_lane_u32(vget_high_u32(vPositions1), 0);
+  uint32x4_t r5 = vdupq_lane_u32(vget_high_u32(vPositions1), 1);
+
+  preloadWaveQT(0, r2 + r3);
+  preloadWaveQT(1, r4 + r3);
+  preloadWaveQT(2, r2 + r5);
+  preloadWaveQT(3, r4 + r5);
+
   for (; out_p != out_e; out_p += 2) {
-    //        vst1_f32(out_p, vdup_n_f32(0.f));
-    vst1_f32(out_p, vdup_lane_f32(vget_low_f32(sLfo.get()), 0));
-    sLfo.advance();
+    float32x4_t w1 = wave4x(&sWTSamplePtrs[0], *(float32x4_t *)&sWTSizes[0], *(uint32x4_t *)&sWTMasks[0], sNotePhase);
+    float32x4_t w2 = wave4x(&sWTSamplePtrs[4], *(float32x4_t *)&sWTSizes[4], *(uint32x4_t *)&sWTMasks[4], sNotePhase);
+    float32x4_t w3 = wave4x(&sWTSamplePtrs[8], *(float32x4_t *)&sWTSizes[8], *(uint32x4_t *)&sWTMasks[8], sNotePhase);
+    float32x4_t w4 = wave4x(&sWTSamplePtrs[12], *(float32x4_t *)&sWTSizes[12], *(uint32x4_t *)&sWTMasks[12], sNotePhase);
+
+    float32x4_t o1 = vmulq_lane_f32(w1, vget_low_f32(vFractions.val[0]), 0);
+    float32x4_t o2 = vmulq_lane_f32(w2, vget_low_f32(vFractions.val[0]), 1);
+    float32x4_t o3 = vmulq_lane_f32(w3, vget_low_f32(vFractions.val[0]), 0);
+    float32x4_t o4 = vmulq_lane_f32(w4, vget_low_f32(vFractions.val[0]), 1);
+    float32x4_t o5 = vmulq_lane_f32(o1 + o2, vget_high_f32(vFractions.val[0]), 0);
+    float32x4_t o6 = vmulq_lane_f32(o3 + o4, vget_high_f32(vFractions.val[0]), 1);
+    float32x4_t o7 = (o5 + o6) * vcombine_f32(vget_low_f32(vFractions.val[1]), vget_low_f32(vFractions.val[1]));
+    float32x2_t o8 = vpadd_f32(vget_low_f32(o7), vget_high_f32(o7)) * vget_high_f32(vFractions.val[1]);
+    vst1_f32(out_p, sAmp * vpadd_f32(o8, o8));
+
+    sNotePhase += sNotePhaseIncrement;
+    sNotePhase -= (int32_t)sNotePhase;
   }
   return;
-  //    }
   /*
       int32_t folds;
       float tpos;
@@ -515,7 +614,7 @@ __unit_callback void unit_render(const float * in, float * out, uint32_t frames)
         }
       }
   */
-
+/*
   float32x4_t vpos = sPosition + sLfoDepth * sLfo.get();
   //    float32x4_t posSaturate = vmaxq_f32(vminq_f32(sDimensionMax, vpos), vdup_n_f32(0.f));
   int32x4_t folds = vcvtq_s32_f32(vmulq_f32(vpos, sDimensionRecip));
@@ -565,6 +664,7 @@ __unit_callback void unit_render(const float * in, float * out, uint32_t frames)
         uint32_t notePhaseOffs1 = (notePhaseOffs0 + 1) & sWaveSizeMask;
         notePhaseOffs0 <<= 2;
         notePhaseOffs1 <<= 2;
+*/  
         /*
                   vst1_f32(out_p, vdup_n_f32(sAmp *
                     linint_f32x2(
@@ -588,6 +688,7 @@ __unit_callback void unit_render(const float * in, float * out, uint32_t frames)
                     )
                   ));
         */
+/*
         float32x4_t f0, f1, f2, f3, f4, f5, f6, f7;
         float32x4_t l0, l1, l2, l3, l4, l5, l6;
         float32x2_t l7, ll8;
@@ -657,54 +758,66 @@ __unit_callback void unit_render(const float * in, float * out, uint32_t frames)
     default:
       break;
   }
+*/  
 }
 
 __unit_callback void unit_set_param_value(uint8_t id, int32_t value) {
+  static wave_t w;
+  static uint32x4_t mask;
+  value = (int16_t)value;
   sParams[id] = value;
-  //    uint32_t tmp;
   switch (id) {
+    case param_lfo_type:
+      for (uint32_t i = 0; i < DIMENSION_COUNT; i++) {
+        mask[i] = value % 5;
+        value /= 5;
+      }
+      maskLFOTypeOneShot = vceqq_u32(vdupq_n_u32(lfo_type_one_shot), mask);
+      maskLFOTypeKeyTrigger = vceqq_u32(vdupq_n_u32(lfo_type_key_trigger), mask);
+      maskLFOTypeRandom = vceqq_u32(vdupq_n_u32(lfo_type_random), mask);
+      maskLFOTypeFreeRun = vceqq_u32(vdupq_n_u32(lfo_type_free_run), mask);
+      maskLFOTypeSnH = vceqq_u32(vdupq_n_u32(lfo_type_sample_and_hold), mask);
+      break;
+    case param_lfo_overflow:
+      for (uint32_t i = 0; i < DIMENSION_COUNT; i++) {
+        mask[i] = value % 3;
+        value /= 3;
+      }
+      maskLFOOverflowWrap = vceqq_u32(vdupq_n_u32(lfo_overflow_wrap), mask);
+      maskLFOOverflowSaturate = vceqq_u32(vdupq_n_u32(lfo_overflow_saturate), mask);
+      maskLFOOverflowFold = vceqq_u32(vdupq_n_u32(lfo_overflow_fold), mask);
+      break;
     case param_position_x:
     case param_position_y:
     case param_position_z:
     case param_position_w:
       id &= DIMENSION_COUNT - 1;
-      sPosition[id] = value * POSITION_SCALE;
+      sPosition[id] = calcPosition(value, sParams[param_dimension_x + id]);
       break;
     case param_lfo_rate_x:
     case param_lfo_rate_y:
     case param_lfo_rate_z:
     case param_lfo_rate_w:
       id &= DIMENSION_COUNT - 1;
-      sLfo.setIncrement(id, value * LFO_RATE_SCALE);
+      sLFOPhaseIncrement[id] = value * LFO_RATE_SCALE;
       break;
     case param_lfo_depth_x:
-      sLfoDepth = vsetq_lane_f32(value * LFO_DEPTH_SCALE, sLfoDepth, 0);
-      break;
     case param_lfo_depth_y:
-      sLfoDepth = vsetq_lane_f32(value * LFO_DEPTH_SCALE, sLfoDepth, 1);
-      break;
     case param_lfo_depth_z:
-      sLfoDepth = vsetq_lane_f32(value * LFO_DEPTH_SCALE, sLfoDepth, 2);
-      break;
     case param_lfo_depth_w:
-      sLfoDepth = vsetq_lane_f32(value * LFO_DEPTH_SCALE, sLfoDepth, 3);
+      id &= DIMENSION_COUNT - 1;
+      sLFODepth[id] = calcLfoDepth(value, sParams[param_dimension_x + id]);
       break;
-      /*
-          case param_lfo_mode_x:
-          case param_lfo_mode_y:
-          case param_lfo_mode_z:
-          case param_lfo_mode_w:
-            id &= DIMENSION_COUNT - 1;
-            sLfo.setMode(id, value);
-
-      //              if (value != LFO_MODE_SAMPLE_AND_HOLD) {
-      //                sLfoMode[id] = lfoMode(value);
-      //                sLfoWave[id] = lfoWave(value);
-      //                sLfoOverflow[id] = lfoOverflow(value);
-      //              } else
-      //                sLfoMode[id] = lfo_typsample_and_hold;
-      */
-      //      break;
+    case param_lfo_waveform_x:
+    case param_lfo_waveform_y:
+    case param_lfo_waveform_z:
+    case param_lfo_waveform_w:
+      id &= DIMENSION_COUNT - 1;
+      w = LFOs.getWave(value);
+      sLFOSamplePtrs[id] = w.sample_ptr;
+      sLFOSizes[id] = w.size;
+      sLFOMasks[id] = w.size_mask;
+      break;
     case param_dimension_x:
       sDimensions[0] = 1;
     case param_dimension_y:
@@ -714,41 +827,14 @@ __unit_callback void unit_set_param_value(uint8_t id, int32_t value) {
     case param_dimension_w:
       sDimensions[3] = sDimensions[2] * sParams[param_dimension_z];
       id &= DIMENSION_COUNT - 1;
+      sPosition[id] = calcPosition(sParams[param_position_x + id], value);
+      sLFODepth[id] = calcLfoDepth(sParams[param_lfo_depth_x + id], value);
       sDimension[id] = value;
-      sDimensionMax = sDimension - 1.f;
-      sDimensionRecip = 1.f / sDimension;
-      sDimensionMaxRecip = 1.f / sDimensionMax;
-      sDimensionScale = sDimensions * sWaveSizes * sSample->channels * sizeof(float);
+      sDimensionSaturateLimit[id] = value - 1;
+      sDimensionMax[id] = value * LFO_DEPTH_SCALE;
+      sDimensionRecip[id] = 1.f / value;
+      sFraction0Mask[id] = value == 1 ? 0xFFFFFFFF : 0;
       break;
-      /*
-            //      case param_wave_bank_idx:
-          case param_wave_sample_idx:
-            //        tmp = get_num_sample_banks();
-            //        if (sParams[param_wave_bank_idx] >= tmp)
-            //          sParams[param_wave_bank_idx] = tmp;
-            //        tmp = get_num_samples_for_bank(sParams[param_wave_sample_idx]);
-            //        if (sParams[param_wave_sample_idx] >= tmp)
-            //          sParams[param_wave_sample_idx] = tmp;
-            //        sSample = get_sample(sParams[param_wave_bank_idx], sParams[param_wave_sample_idx]);
-            sSample = get_sample(USER_BANK + (sParams[param_wave_sample_idx] >> 7), sParams[param_wave_sample_idx] & 0x7F);
-          case param_wave_size:
-            sWaveSizeExp = sParams[param_wave_size];
-            sWaveSizeExpRes = 32 - sWaveSizeExp;
-            sWaveSizeMask = sWaveSize - 1;
-            sWaveSize = 1 << sWaveSizeExp;
-            sWaveSizeRecip = 1.f / sWaveSize;
-            sWaveSizes = vsetq_lane_u32(1, vdupq_n_u32(sWaveSize), 0);
-            sDimensionScale = sDimensions * sWaveSizes * (sSample == NULL ? 1 : sSample->channels) * sizeof(float);
-          case param_wave_offset:
-            sWaveOffset = sParams[param_wave_offset];
-            if ((sSample != NULL) && (sSample->frames >> sWaveSize) <= sWaveOffset) {
-              sWaveOffset = (sSample->frames >> sWaveSize) - 1;
-              sParams[param_wave_offset] = sWaveOffset;
-            }
-            setSampleOffset();
-            sWaveMaxIndex = sSample == NULL ? 0 : (sSample->frames >> sWaveSizeExp) - sWaveOffset - 1;
-            break;
-      */
     default:
       break;
   }
@@ -759,59 +845,59 @@ __unit_callback int32_t unit_get_param_value(uint8_t id) {
 }
 
 __unit_callback const char * unit_get_param_str_value(uint8_t id, int32_t value) {
+  value = (int16_t)value;
   static const char * lfoTypes = "OTRFS";
-  static const char * lfoOverflows = "SWF";
+  static const char * lfoOverflows = "WSF";
   static char s[UNIT_PARAM_NAME_LEN + 1];
   static const char * name;
-  static uint32_t overflows[DIMENSION_COUNT];
+  static uint32_t modes[DIMENSION_COUNT];
 
   switch (id) {
-      /*
-          case param_lfo_mode_x:
-          case param_lfo_mode_y:
-          case param_lfo_mode_z:
-          case param_lfo_mode_w:
-            if (value != LFO_MODE_SAMPLE_AND_HOLD) {
-              sprintf(s, "%s.%s.%s", lfoTypeNames[lfoType(value)], lfoWaveNames[lfoWave(value)], lfoOverflowNames[lfoOverflow(value)]);
-              return s;
-            } else
-              return lfoTypeNames[4];
-          case param_wave_sample_idx:
-            return sSample == NULL ? "---" : sSample->name;
-          case param_wave_size:
-            sprintf(s, "%d", 1 << value);
-            return s;
-      */
-    case param_lfo_mode:
+    case param_lfo_type:
       for (uint32_t i = 0; i < DIMENSION_COUNT; i++) {
-        overflows[i] = value % 5;
+        modes[i] = value % 5;
         value /= 5;
       }
-      sprintf(s, "%c.%c.%c.%c", lfoTypes[overflows[0]], lfoTypes[overflows[1]], lfoTypes[overflows[2]], lfoTypes[overflows[3]]);
-      return s;
+      sprintf(s, "%c.%c.%c.%c", lfoTypes[modes[0]], lfoTypes[modes[1]], lfoTypes[modes[2]], lfoTypes[modes[3]]);
+      break;
     case param_lfo_overflow:
       for (uint32_t i = 0; i < DIMENSION_COUNT; i++) {
-        overflows[i] = value % 3;
+        modes[i] = value % 3;
         value /= 3;
       }
-      sprintf(s, "%c.%c.%c.%c", lfoOverflows[overflows[0]], lfoOverflows[overflows[1]], lfoOverflows[overflows[2]], lfoOverflows[overflows[3]]);
-      return s;
-    case param_waveform_start:
-//      if ((name = getWaveName(Wavetables, value)) != nullptr)
-      if ((name = Wavetables.getName(value)) != nullptr)
-        return name;
+      sprintf(s, "%c.%c.%c.%c", lfoOverflows[modes[0]], lfoOverflows[modes[1]], lfoOverflows[modes[2]], lfoOverflows[modes[3]]);
       break;
+    case param_position_x:
+    case param_position_y:
+    case param_position_z:
+    case param_position_w:
+      id &= DIMENSION_COUNT - 1;
+      sprintf(s, "%.*f", sParams[param_dimension_x + id] >= 1000 ? 2 : sParams[param_dimension_x + id] >= 100 ? 3 : 4, calcPosition(value, sParams[param_dimension_x + id]) + (sParams[param_dimension_x + id] == 1 ? 0.f : 1.f));
+      break;
+    case param_lfo_rate_x:
+    case param_lfo_rate_y:
+    case param_lfo_rate_z:
+    case param_lfo_rate_w:
+      sprintf(s, "%.3fHz", value * LFO_RATE_SCALE_DISPLAY);
+      break;
+    case param_lfo_depth_x:
+    case param_lfo_depth_y:
+    case param_lfo_depth_z:
+    case param_lfo_depth_w:
+      id &= DIMENSION_COUNT - 1;
+      sprintf(s, "%.*f", sParams[param_dimension_x + id] >= 1000 ? 2 : sParams[param_dimension_x + id] >= 100 ? 3 : 4, calcLfoDepth(value, sParams[param_dimension_x + id]) * 2.f);
+      break;
+    case param_waveform_start:
     case param_lfo_waveform_x:
     case param_lfo_waveform_y:
     case param_lfo_waveform_z:
     case param_lfo_waveform_w:
-      if ((name = LFOs.getName(value)) != nullptr)
+      if ((name = (id == param_waveform_start ? WTs.getName(value) : LFOs.getName(value))) != nullptr)
         return name;
-      break;
-    default:
+    default:   
+      sprintf(s, "%d", value);
       break;
   }
-  sprintf(s, "%d", value);
   return s;
 }
 
@@ -847,7 +933,7 @@ __unit_callback void unit_all_note_off() {
 
 __unit_callback void unit_pitch_bend(uint16_t bend) {
   sPitchBend = (bend - PITCH_BEND_CENTER) * PITCH_BEND_SENSITIVITY;
-  sNotePhaseIncrement = (float)UINT_MAX * fastpow2((sNote + sPitchBend + NOTE_FREQ_OFFSET) * OCTAVE_RECIP);
+  sNotePhaseIncrement = fastpow2((sNote + sPitchBend + NOTE_FREQ_OFFSET) * OCTAVE_RECIP);
 }
 
 __unit_callback void unit_channel_pressure(uint8_t pressure) {

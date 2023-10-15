@@ -93,11 +93,10 @@ struct wavetable_t
         const sample_wrapper_t *sample = desc->get_sample(bank_idx, sample_idx);
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wstrict-aliasing"
-        if (sample == nullptr || sample->sample_ptr == nullptr || sample->channels > 1 || *(uint32_t *)sample->name != unit_header.unit_id)
+        if (sample == nullptr || sample->sample_ptr == nullptr || sample->channels > 1 || *(uint32_t *)sample->name != unit_header.unit_id || ((uint32_t *)sample->name)[1] != prefix || wavetable_idx >= MAX_SAMPLES_LOAD)
 #pragma GCC diagnostic pop
           continue;
-        if (((uint32_t *)sample->name)[1] == prefix)
-          wavetables[wavetable_idx].sample_ptr = sample->sample_ptr;
+        wavetables[wavetable_idx].sample_ptr = sample->sample_ptr;
         wavesize = 256;
         if (strlen(sample->name) >= 10 && sscanf((char *)&sample->name[9], " %d", &wavesize) != 1)
         {
@@ -111,6 +110,7 @@ struct wavetable_t
             if (namelength > (sizeof(wavetables[wavetable_idx].name) - 1))
               namelength = (sizeof(wavetables[wavetable_idx].name) - 1);
             strncpy(wavetables[wavetable_idx].name, (char *)&sample->name[9], namelength);
+            wavetables[wavetable_idx].name[namelength] = 0;
           }
         }
         else
