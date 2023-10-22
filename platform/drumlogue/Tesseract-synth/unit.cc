@@ -154,6 +154,7 @@ static float sLFOSizes[DIMENSION_COUNT];
 static uint32_t sLFOMasks[DIMENSION_COUNT];
 
 static float32x4_t sLFOPhase;
+static float32x4_t sLFOPhaseMax;
 static float32x4_t sLFOPhaseIncrement;
 static float32x4_t sLFODepth;
 static float32x4_t sLFOOutSnH;
@@ -163,6 +164,7 @@ static uint32x4_t maskLFOTypeKeyTrigger;
 static uint32x4_t maskLFOTypeRandom;
 static uint32x4_t maskLFOTypeFreeRun;
 static uint32x4_t maskLFOTypeSnH;
+static uint32x4_t maskLFOPhaseOverflow;
 static uint32x4_t maskLFOOverflowSaturate;
 static uint32x4_t maskLFOOverflowWrap;
 static uint32x4_t maskLFOOverflowFold;
@@ -308,11 +310,12 @@ fast_inline void noteOn(uint8_t note, uint8_t velocity) {
   sNotePhaseIncrement = fastpow2((sNote + sPitchBend + NOTE_FREQ_OFFSET) * OCTAVE_RECIP);
   sNotePhase = 0.f;
   sAmp = vdup_n_f32(velocity * VELOCITY_SENSITIVITY);
-  sLFOPhase = vbslq_f32(maskLFOTypeRandom,
-    randomUni(),
-    vreinterpretq_f32_u32(vbicq_u32(vreinterpretq_u32_f32(sLFOPhase), vorrq_u32(vorrq_u32(maskLFOTypeOneShot, maskLFOTypeKeyTrigger), maskLFOTypeSnH)))
+  sLFOOutSnH = randomUni();
+  sLFOPhase = vbslq_f32(maskLFOTypeRandom | maskLFOTypeSnH,
+    sLFOOutSnH,
+    vreinterpretq_f32_u32(vbicq_u32(vreinterpretq_u32_f32(sLFOPhase), maskLFOTypeOneShot | maskLFOTypeKeyTrigger))
   );
-  sLFOOutSnH = randomBi();
+  maskLFOPhaseOverflow = vdupq_n_u32(0);
 }
 
 fast_inline void noteOff(uint8_t note) {
@@ -441,19 +444,14 @@ __unit_callback void unit_render(const float * in, float * out, uint32_t frames)
   const float * out_e = out_p + (frames << 1);  // assuming stereo output
     
 //  float32x4_t vLFOOut = wave4x(sLFOSamplePtrs, *(float32x4_t *)&sLFOSizes, *(uint32x4_t *)&sLFOMasks, sLFOPhase);
-  float32x4_t vLFOOut = vbslq_f32(maskLFOTypeSnH,
-    sLFOOutSnH,
-    wave4x(sLFOSamplePtrs, *(float32x4_t *)&sLFOSizes, *(uint32x4_t *)&sLFOMasks, sLFOPhase)
-  );
+  float32x4_t vLFOOut = wave4x(sLFOSamplePtrs, *(float32x4_t *)&sLFOSizes, *(uint32x4_t *)&sLFOMasks, vbslq_f32(maskLFOTypeSnH, sLFOOutSnH, sLFOPhase));
   float32x4_t sLFOPhaseOld = sLFOPhase;
   sLFOPhase += sLFOPhaseIncrement * (float)frames;
   sLFOPhase -= vcvtq_f32_u32(vcvtq_u32_f32(sLFOPhase));
-  uint32x4_t maskLFOPhaseOverflow = vcltq_f32(sLFOPhase, sLFOPhaseOld);
-  sLFOPhase = vbslq_f32(vandq_u32(maskLFOPhaseOverflow, maskLFOTypeOneShot),
-    vreinterpretq_f32_u32(vdupq_n_u32(0x3f7fffff)),
-    sLFOPhase
-  );
-  sLFOOutSnH = vbslq_f32(maskLFOPhaseOverflow, randomBi(), sLFOOutSnH);
+  uint32x4_t maskLFOPhaseOverflowTmp = vcltq_f32(sLFOPhase, sLFOPhaseOld);
+  sLFOOutSnH = vbslq_f32(maskLFOPhaseOverflowTmp, randomUni(), sLFOOutSnH);
+  maskLFOPhaseOverflow |= maskLFOPhaseOverflowTmp;
+  sLFOPhase = vbslq_f32(maskLFOPhaseOverflow & maskLFOTypeOneShot, sLFOPhaseMax, sLFOPhase);
 
   float32x4_t vPosition = sPosition;
   vPosition += vLFOOut * sLFODepth;
@@ -817,6 +815,7 @@ __unit_callback void unit_set_param_value(uint8_t id, int32_t value) {
       sLFOSamplePtrs[id] = w.sample_ptr;
       sLFOSizes[id] = w.size;
       sLFOMasks[id] = w.size_mask;
+      sLFOPhaseMax[id] = w.size_mask / w.size;
       break;
     case param_dimension_x:
       sDimensions[0] = 1;

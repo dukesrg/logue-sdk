@@ -249,3 +249,17 @@ fast_inline float32x4x3_t vcvtq_n_f32_uq32(uq32x4x3_t a) {
 fast_inline uq32x4x3_t vcvtq_n_f32_uq32(float32x4x3_t a) {
   return {vcvtq_n_u32_f32(a.val[0], 32), vcvtq_n_u32_f32(a.val[1], 32), vcvtq_n_u32_f32(a.val[2], 32)};
 }
+
+fast_inline uint32x4_t vcntq_u32(uint32x4_t value) {
+  uint8x16_t tmp = vcntq_u8(vreinterpretq_u8_u32(value));
+  tmp = vaddq_u8(tmp, vrev16q_u8(tmp));
+  tmp = vaddq_u8(tmp, vrev32q_u8(tmp));
+  return vshrq_n_u32(vreinterpretq_u32_u8(tmp), 24);
+}
+
+fast_inline int32x4_t vcntq_s32(int32x4_t value) {
+  int8x16_t tmp = vcntq_s8(vreinterpretq_s8_s32(value));
+  tmp = vaddq_s8(tmp, vrev16q_s8(tmp));
+  tmp = vaddq_s8(tmp, vrev32q_s8(tmp));
+  return vshrq_n_s32(vreinterpretq_s32_s8(tmp), 24);
+}
