@@ -31,10 +31,10 @@ const __unit_header unit_header_t unit_header = {
         {-128, 128, 0, 0, k_unit_param_type_strings, 0, k_unit_param_frac_mode_fixed, 0, {"Pos Z"}},
         {-128, 128, 0, 0, k_unit_param_type_strings, 0, k_unit_param_frac_mode_fixed, 0, {"Pos W"}},
 // LFO rate X Y Z W
-        {0, 1280, 0, 0, k_unit_param_type_strings, 0, k_unit_param_frac_mode_fixed, 0, {"Rate X"}},
-        {0, 1280, 0, 0, k_unit_param_type_strings, 0, k_unit_param_frac_mode_fixed, 0, {"Rate Y"}},
-        {0, 1280, 0, 0, k_unit_param_type_strings, 0, k_unit_param_frac_mode_fixed, 0, {"Rate Z"}},
-        {0, 1280, 0, 0, k_unit_param_type_strings, 0, k_unit_param_frac_mode_fixed, 0, {"Rate W"}},
+        {-512, 5120, 0, 0, k_unit_param_type_strings, 0, k_unit_param_frac_mode_fixed, 0, {"Rate X"}},
+        {-512, 5120, 0, 0, k_unit_param_type_strings, 0, k_unit_param_frac_mode_fixed, 0, {"Rate Y"}},
+        {-512, 5120, 0, 0, k_unit_param_type_strings, 0, k_unit_param_frac_mode_fixed, 0, {"Rate Z"}},
+        {-512, 5120, 0, 0, k_unit_param_type_strings, 0, k_unit_param_frac_mode_fixed, 0, {"Rate W"}},
 // LFO depth X Y Z W
         {-128, 128, 0, 0, k_unit_param_type_strings, 0, k_unit_param_frac_mode_fixed, 0, {"Depth X"}},
         {-128, 128, 0, 0, k_unit_param_type_strings, 0, k_unit_param_frac_mode_fixed, 0, {"Depth Y"}},

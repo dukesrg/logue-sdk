@@ -49,58 +49,13 @@
 #define LFO_DEPTH_MAX 128
 #define LFO_DEPTH_MAX_RECIP 7.8125e-3f // 1/128
 
-// #define LFO_RATE_SCALE .001f
-// #define LFO_RATE_SCALE 89.478485f    // 2^32 / 48000 / 1000
-//#define LFO_RATE_SCALE 699.05067f         // 2^32 / 48000 / 128
-#define LFO_RATE_SCALE 1.62760417e-7f // 1 / 48000 / 128
-#define LFO_RATE_SCALE_DISPLAY 7.8125e-3f // 1 / 128
-#define LFO_RATE_SCALE_TEMPO .022755555f  // 2^32 / 48000 / 60 / 2^16 - for 1/4
+#define LFO_RATE_SCALE 8.1380208e-8f // 1 / 48000 / 256
+#define LFO_RATE_SCALE_DISPLAY 3.90625e-3f // 1 / 256
+#define LFO_RATE_SCALE_DISPLAY_RECIP 256.f
+#define LFO_RATE_SCALE_TEMPO -1.388888889e-6f  // -4 / 48000 / 60
 // #define LFO_DEPTH_SCALE .001953125f  // 1/512
 // #define LFO_DEPTH_SCALE 9.0949470e-13f  // 1 / 2^31 / 512
 #define LFO_DEPTH_SCALE 1
-// #define UINTMAX_RECIP 2.3283064e-10f
-//#define INTMAX_RECIP 4.65661287e-10f
-
-/*
-#define LFO_MODE_SAMPLE_AND_HOLD 48
-
-#define USER_BANK 5
-
-#define lfoType(a) (a & 3)
-#define lfoWave(a) ((a >> 2) & 3)
-#define lfoOverflow(a) ((a >> 4) & 3)
-
-#define ldq_f32(a, b) (*(float *)((a)[b]))
-#define vmovq_x4_f32(f, a, b, c, d) vsetq_lane_f32(d, vsetq_lane_f32(c, vsetq_lane_f32(b, vsetq_lane_f32(a, f, 0), 1), 2), 3);
-#define vld1q_f32_indirect(f, a) vmovq_x4_f32(f, ldq_f32(a, 0), ldq_f32(a, 1), ldq_f32(a, 2), ldq_f32(a, 3))
-#define vlinintq_f32(a, b, c) (a + (b - a) * c)  // vfmaq_f32
-#define vlinint_f32(a, b, c) (a + (b - a) * c)   // vfma_f32
-#define vlinintq_lane_f32(a, b, c, d) vmlaq_lane_f32(a, b - a, c, d)
-#define vlinint_lane_f32(a, b, c, d) vmla_lane_f32(a, b - a, c, d)
-
-#define ld_f32(a, b) vld1_f32((const float *)((a)[b]))
-#define vld2q_f32_indirect(a) vuzpq_f32(vcombine_f32(ld_f32(a, 0), ld_f32(a, 1)), vcombine_f32(ld_f32(a, 2), ld_f32(a, 3)))
-*/
-
-// #define vaddq_dupq_n_u32(a,b) vaddq_u32(a, vdupq_n_u32(b))
-// #define u32x4(a,b,c,d) vsetq_lane_u32(d, vsetq_lane_u32(c, vsetq_lane_u32(b, vdupq_n_u32(a), 1), 2), 3)
-// #define ldf32(a,b) (*(float*)vgetq_lane_u32(a, b))
-// #define vsetq_x4_f32(a,b,c,d) vsetq_lane_f32(d, vsetq_lane_f32(c, vsetq_lane_f32(b, vdupq_n_f32(a), 1) , 2), 3)
-// #define vmovq_x4_f32(a,b,c,d) vsetq_lane_f32(d, vsetq_lane_f32(c, vsetq_lane_f32(b, vdupq_n_f32(a), 1) , 2), 3)
-// #define vmovq_x4_u32(a,b,c,d) vsetq_lane_u32(d, vsetq_lane_u32(c, vsetq_lane_u32(b, vdupq_n_u32(a), 1) , 2), 3)
-// #define vmovq_x4_s32(a,b,c,d) vsetq_lane_s32(d, vsetq_lane_s32(c, vsetq_lane_s32(b, vdupq_n_s32(a), 1) , 2), 3)
-// #define vld1q_f32_indirect(a) vmovq_x4_f32(ld_f32(a, 0), ld_f32(a, 1), ld_f32(a, 2), ld_f32(a, 3))
-// #define vlinintq_n_f32_indirect(a,b,c,d) vlinintq_n_f32(vld1q_f32_indirect(vaddq_dupq_n_u32(a, b)), vld1q_f32_indirect(vaddq_dupq_n_u32(a, c)), d)
-// #define vlinintq_n_f32(a,b,c) vmlaq_f32(a, vsubq_f32(b, a), vdupq_n_f32(c))
-// #define vlinintq_lane_f32(a,b,c,d) vmlaq_lane_f32(a, vsubq_f32(b, a), c, d)
-// #define vlinint_n_f32(a,b,c) vmla_f32(a, vsub_f32(b, a), vdup_n_f32(c))
-// #define vlinint_n_f32x2(a,b) (vlinint_n_f32(vget_low_f32(a), vget_high_f32(a), b))
-// #define linint_f32(a,b,c) (a + (b - a) * c)
-// #define linint_f32x2(a,b) linint_f32(vget_lane_f32(a, 0), vget_lane_f32(a, 1), b)
-// #define veorshlq_u32(a,b) veorq_u32(a, vshlq_n_u32(a, b))
-// #define veorshrq_u32(a,b) veorq_u32(a, vshrq_n_u32(a, b))
-// #define veorshlq_s32(a,b) veorq_s32(a, vshlq_n_s32(a, b))
-// #define veorshrq_s32(a,b) veorq_s32(a, vshrq_n_s32(a, b))
 
 enum {
   param_gate_note = 0U,
@@ -156,6 +111,7 @@ static uint32_t sLFOMasks[DIMENSION_COUNT];
 static float32x4_t sLFOPhase;
 static float32x4_t sLFOPhaseMax;
 static float32x4_t sLFOPhaseIncrement;
+static float32x4_t sLFORateTempo;
 static float32x4_t sLFODepth;
 static float32x4_t sLFOOutSnH;
 
@@ -168,12 +124,14 @@ static uint32x4_t maskLFOPhaseOverflow;
 static uint32x4_t maskLFOOverflowSaturate;
 static uint32x4_t maskLFOOverflowWrap;
 static uint32x4_t maskLFOOverflowFold;
+static uint32x4_t maskLFORateTempo;
 
 static float sNote;
 static float32x2_t sAmp;
 static float sNotePhase;
 static float sNotePhaseIncrement;
 static float sPitchBend;
+static float sTempo;
 
 static int32_t sParams[PARAM_COUNT];
 static float32x4_t sPosition;
@@ -797,7 +755,14 @@ __unit_callback void unit_set_param_value(uint8_t id, int32_t value) {
     case param_lfo_rate_z:
     case param_lfo_rate_w:
       id &= DIMENSION_COUNT - 1;
-      sLFOPhaseIncrement[id] = value * LFO_RATE_SCALE;
+      if (value >= 0) {
+        sLFOPhaseIncrement[id] = value * LFO_RATE_SCALE;
+        maskLFORateTempo[id] = 0;
+      } else {
+        sLFORateTempo[id] = LFO_RATE_SCALE_TEMPO / value;
+        maskLFORateTempo[id] = -1;
+      }
+      sLFOPhaseIncrement = vbslq_f32(maskLFORateTempo, sLFORateTempo * sTempo, sLFOPhaseIncrement);
       break;
     case param_lfo_depth_x:
     case param_lfo_depth_y:
@@ -850,6 +815,7 @@ __unit_callback const char * unit_get_param_str_value(uint8_t id, int32_t value)
   static char s[UNIT_PARAM_NAME_LEN + 1];
   static const char * name;
   static uint32_t modes[DIMENSION_COUNT];
+  static float seconds;
 
   switch (id) {
     case param_lfo_type:
@@ -877,7 +843,19 @@ __unit_callback const char * unit_get_param_str_value(uint8_t id, int32_t value)
     case param_lfo_rate_y:
     case param_lfo_rate_z:
     case param_lfo_rate_w:
-      sprintf(s, "%.3fHz", value * LFO_RATE_SCALE_DISPLAY);
+      id &= DIMENSION_COUNT - 1;
+      if (value > 0) {
+        if (maskLFOTypeOneShot[id]) {
+          seconds = LFO_RATE_SCALE_DISPLAY_RECIP / value;
+          sprintf(s, "%.*fs", seconds < 1.f ? 4 : seconds >= 10.f ? 2 : 3, seconds);
+        } else 
+          sprintf(s, "%.3fHz", value * LFO_RATE_SCALE_DISPLAY);
+      } else if (value < 0) {
+        value =- value;
+        sprintf(s, "%d.%d.%dt", value >> 4, (value >> 2) & 3,  value & 3);
+      } else {
+        sprintf(s, "%d", value);
+      }
       break;
     case param_lfo_depth_x:
     case param_lfo_depth_y:
@@ -907,7 +885,8 @@ __unit_callback const uint8_t * unit_get_param_bmp_value(uint8_t id, int32_t val
 }
 
 __unit_callback void unit_set_tempo(uint32_t tempo) {
-  __attribute__((used)) static float ftempo = uq16_16_to_f32(tempo);
+  sTempo = uq16_16_to_f32(tempo);
+  sLFOPhaseIncrement = vbslq_f32(maskLFORateTempo, sLFORateTempo * sTempo, sLFOPhaseIncrement);
 }
 
 __unit_callback void unit_note_on(uint8_t note, uint8_t velocity) {
