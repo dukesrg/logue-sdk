@@ -181,7 +181,7 @@ fast_inline void noteOn(uint8_t note, uint8_t velocity) {
   sNote = note;
   setPitch();
   sAmp = vdup_n_f32(velocity * VELOCITY_SENSITIVITY);
-  maskStopped = maskLatched & !maskStopped;
+  maskStopped = maskLatched & ~maskStopped;
   sSampleCounter = vreinterpretq_f32_u32(vbicq_u32(vreinterpretq_u32_f32(sSampleCounter), maskRcvNoteOn));
   if (sParams[param_track_mode] != track_mode_layers)
     nextSeq();
