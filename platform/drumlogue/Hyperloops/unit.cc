@@ -31,7 +31,6 @@
 #define CHUNK_SIZE (1 << CHUNK_SIZE_EXP)
 #define CHNUK_SIZE_MASK (CHUNK_SIZE - 1)
 #define CHUNK_COUNT (uint32_t)(SIZE_SCALE * (1 << LENGTH_STEPS_MAX) / CHUNK_SIZE + 1)
-#define CHANNEL_COUNT 2
 
 enum {
   param_play_1 = 0U,
@@ -75,44 +74,33 @@ static float32x4_t sSampleCounterIncrement;
 static uint32_t sWriteBackSamples;
 static float32x2_t sWriteBackSamplesRecip;
 
-/*===========================================================================*/
-/* Private Methods. */
-/*===========================================================================*/
-
 fast_inline void allocateChunks(uint32_t track, uint32_t newsize) {
   static uint32_t allocated[TRACK_COUNT];
   uint32_t count = newsize == 0 ? 0 : (newsize / CHUNK_SIZE + 1);
   if (newsize < ((float *)sSampleSize)[track]) {
-    if (newsize > 0) {
-      uint32_t overflows = ((float *)sSampleCounter)[track] / newsize;
-      ((float *)sSampleCounter)[track] -= newsize * overflows;
-    }
+    ((float *)sSampleSize)[track] = newsize;  
     if (newsize <= ((float *)sSampleDupSize)[track]) {
       maskDup[track] = 0;
       ((float *)sSampleDupSize)[track] = newsize;
     }
-    if (count < allocated[track])
-      for (uint32_t i = count; i < allocated[track]; free(chunks[track][i++]));
+    for (uint32_t i = count; i < allocated[track]; free(chunks[track][i++]));
   } else if (newsize > ((float *)sSampleSize)[track]) {
-    if (count > allocated[track]) {
-      for (uint32_t i = allocated[track]; i < count; i++) {
-        chunks[track][i] = (float32x2_t *)malloc(CHUNK_SIZE * sizeof(float32x2_t));
-        if (chunks[track][i] == NULL) {
-          for (;i > allocated[track]; free(chunks[track][--i]));
-          isChunksAllocated[track] = false;
-          return;
-        }
+    for (uint32_t i = allocated[track]; i < count; i++) {
+      chunks[track][i] = (float32x2_t *)malloc(CHUNK_SIZE * sizeof(float32x2_t));
+      if (chunks[track][i] == NULL) {
+        for (;i > allocated[track]; free(chunks[track][--i]));
+        isChunksAllocated[track] = false;
+        return;
       }
     }
     if (maskDup[track] == 0) {
       maskDup[track] = -1;
       ((float *)sSampleDupSize)[track] = ((float *)sSampleSize)[track];
-      if (((float *)sSampleDupSize)[track] != 0.f)
-        ((float *)sSampleDupSizeRecip)[track] = 1.f / ((float *)sSampleDupSize)[track]; 
+      ((float *)sSampleDupSizeRecip)[track] = 1.f / ((float *)sSampleDupSize)[track]; 
     }
+    ((float *)sSampleSize)[track] = newsize;
   }
   allocated[track] = count;
-  ((float *)sSampleSize)[track] = newsize;
   isChunksAllocated[track] = true;
 }
 
@@ -127,8 +115,6 @@ fast_inline void calcOffsets(float32x2_t ** sampleOffset, float32x4_t * sampleCo
     maskSampleCounterOverflow[1] = vcgeq_f32(sampleCounter[1], sSampleSize[1]);
     sampleCounter[0] = vbslq_f32(maskSampleCounterOverflow[0], sampleCounter[0] - sSampleSize[0], sSampleCounter[0]);
     sampleCounter[1] = vbslq_f32(maskSampleCounterOverflow[1], sampleCounter[1] - sSampleSize[1], sSampleCounter[1]);
-    sSampleDupSize[0] = vbslq_f32(maskSampleCounterOverflow[0], sSampleSize[0], sSampleDupSize[0]);
-    sSampleDupSize[1] = vbslq_f32(maskSampleCounterOverflow[1], sSampleSize[1], sSampleDupSize[1]);
     ((uint32x4_t*)maskDup)[0] = vbicq_u32(((uint32x4_t*)maskDup)[0], maskSampleCounterOverflow[0]);
     ((uint32x4_t*)maskDup)[1] = vbicq_u32(((uint32x4_t*)maskDup)[1], maskSampleCounterOverflow[1]);
     vSampleDupCounter[0] = sampleCounter[0] * sSampleDupSizeRecip[0];
@@ -237,12 +223,7 @@ __unit_callback void unit_render(const float * in, float * out, uint32_t frames)
     calcOffsets(vSampleOffset, sSampleCounter);
     vSampleCounterWrite[0] = sSampleCounter[0];
     vSampleCounterWrite[1] = sSampleCounter[1];
-/*
-    vSampleData[0] = vbicq_f32(vcombine_f32(*vSampleOffset[0], *vSampleOffset[1]), maskMute[0]);
-    vSampleData[1] = vbicq_f32(vcombine_f32(*vSampleOffset[2], *vSampleOffset[3]), maskMute[1]);
-    vSampleData[2] = vbicq_f32(vcombine_f32(*vSampleOffset[4], *vSampleOffset[5]), maskMute[2]);
-    vSampleData[3] = vbicq_f32(vcombine_f32(*vSampleOffset[6], *vSampleOffset[7]), maskMute[3]);
-*/
+
     float32x4_t vSampleData0[TRACK_COUNT >> 1];
     float32x4_t vSampleData1[TRACK_COUNT >> 1];
     float32x4_t vSampleFrac[TRACK_COUNT >> 1];
@@ -317,19 +298,18 @@ __unit_callback void unit_render(const float * in, float * out, uint32_t frames)
 
 __unit_callback void unit_set_param_value(uint8_t id, int32_t value) {
   value = (int16_t)value;
-  uint32_t track;
-  if (id <= param_play_8) {
-    track = id - param_play_1;
-    ((uint32x2_t *)maskMute)[track] = vdup_n_u32(value ? 0 : -1);
-  } else if (id <= param_record_8) {
-    track = id - param_record_1;
-    maskRecord[track] = value ? -1 : 0;
-    maskRestart[track] = maskRecord[track] & ((uint32x2_t *)maskMute)[track][0];
-  } else {
-    track = id - param_length_1;
-    allocateChunks(track, SIZE_SCALE * (1 << value));
-  }
   sParams[id] = value;
+  if (id <= param_play_8) {
+    id -= param_play_1;
+    ((uint32x2_t *)maskMute)[id] = vdup_n_u32(value ? 0 : -1);
+  } else if (id <= param_record_8) {
+    id -= param_record_1;
+    maskRecord[id] = value ? -1 : 0;
+    maskRestart[id] = maskRecord[id] & ((uint32x2_t *)maskMute)[id][0];
+  } else {
+    id -= param_length_1;
+    allocateChunks(id, SIZE_SCALE * (1 << value));
+  }
 }
 
 __unit_callback int32_t unit_get_param_value(uint8_t id) {
