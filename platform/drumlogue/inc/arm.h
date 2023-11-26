@@ -263,3 +263,5 @@ fast_inline int32x4_t vcntq_s32(int32x4_t value) {
   tmp = vaddq_s8(tmp, vrev32q_s8(tmp));
   return vshrq_n_s32(vreinterpretq_s32_s8(tmp), 24);
 }
+
+#define vbicq_f32(a,b) vreinterpretq_f32_u32(vbicq_u32(vreinterpretq_u32_f32(a),b))
