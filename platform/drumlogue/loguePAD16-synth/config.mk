@@ -2,7 +2,7 @@
 # Project Configuration
 #
 
-PROJECT := loguePAD_synth
+PROJECT := loguePAD16_synth
 PROJECT_TYPE := synth
 
 ##############################################################################
@@ -43,4 +43,4 @@ ULIBS += -lc
 # Macros
 #
 
-UDEFS = -DPARAM_COUNT=24
+UDEFS = -DPARAM_COUNT=24 -DLOGUEPAD=16

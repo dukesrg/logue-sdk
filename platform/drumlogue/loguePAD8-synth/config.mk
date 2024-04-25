@@ -2,7 +2,7 @@
 # Project Configuration
 #
 
-PROJECT := SampleX_synth
+PROJECT := loguePAD8_synth
 PROJECT_TYPE := synth
 
 ##############################################################################
@@ -43,4 +43,4 @@ ULIBS += -lc
 # Macros
 #
 
-UDEFS = -DPARAM_COUNT=24
+UDEFS = -DPARAM_COUNT=24 -DLOGUEPAD=8
