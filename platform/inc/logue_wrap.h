@@ -31,8 +31,8 @@
 
 #if defined(USER_API_VERSION) && defined(USER_TARGET_PLATFORM)
   #pragma message "logue SDK 1.0 detected"
-  #define TARGET_PLATFORM VAL(UNBRACE(USER_TARGET_PLATFORM))
-  #define TARGET_MODULE VAL(USER_TARGET_MODULE)
+  #define TARGET_PLATFORM USER_TARGET_PLATFORM
+  #define TARGET_MODULE USER_TARGET_MODULE
 #elif defined(UNIT_API_VERSION) && defined(UNIT_TARGET_PLATFORM)
   #pragma message "logue SDK 2.0 detected"
   #define TARGET_PLATFORM VAL(UNBRACE(UNIT_TARGET_PLATFORM))
@@ -41,16 +41,13 @@
   #pragma GCC error "Unsupported platform"
 #endif
 
-#define k_user_target_prologue_val 1
-#define k_user_target_miniloguexd_val 2
-#define k_user_target_nutektdigital_val 3
-#define k_unit_target_prologue_val 1
-#define k_unit_target_miniloguexd_val 2
-#define k_unit_target_nts1_val 3
-#define k_unit_target_nutektdigital_val 3
-#define k_unit_target_drumlogue_val 4
-#define k_unit_target_nts1_mkii_val 5
-#define k_unit_target_nts3_kaoss_val 6
+#define k_unit_target_prologue_val (1<<8)
+#define k_unit_target_miniloguexd_val (2<<8)
+#define k_unit_target_nts1_val (3<<8)
+#define k_unit_target_nutektdigital_val (3<<8)
+#define k_unit_target_drumlogue_val (4<<8)
+#define k_unit_target_nts1_mkii_val (5<<8)
+#define k_unit_target_nts3_kaoss_val (6<<8)
 
 #if TARGET_PLATFORM == k_unit_target_prologue_val
   #pragma message "prologue target detected"
@@ -74,76 +71,73 @@
   #pragma GCC error "Unsupported platform"
 #endif
 
-#define k_user_module_modfx_val 11
-#define k_user_module_delfx_val 12
-#define k_user_module_revfx_val 13
-#define k_user_module_osc_val 14
-#define k_unit_module_modfx_val 21
-#define k_unit_module_delfx_val 22
-#define k_unit_module_revfx_val 23
-#define k_unit_module_osc_val 24
-#define k_unit_module_synth_val 25
-#define k_unit_module_masterfx_val 26
-#define k_unit_module_genericfx_val 27
+#define k_unit_module_modfx_val 1
+#define k_unit_module_delfx_val 2
+#define k_unit_module_revfx_val 3
+#define k_unit_module_osc_val 4
+#define k_unit_module_synth_val 5
+#define k_unit_module_masterfx_val 6
+#define k_unit_module_genericfx_val 7
 
 #define UNIT_INPUT_CHANNELS 2
 #define UNIT_OUTPUT_CHANNELS 2
 
-#ifdef UNIT_TARGET_MODULE
-  #if TARGET_MODULE == k_user_module_modfx_val
+#ifdef TARGET_MODULE
+  #if TARGET_MODULE == k_unit_module_modfx_val
     #pragma message "ModFX module detected"
-    #include "usermodfx.h"
-  #elif TARGET_MODULE == k_user_module_delfx_val
-    #pragma message "DelFX module detected"
-    #include "userdel.h"
-  #elif TARGET_MODULE == k_user_module_revfx_val
-    #pragma message "RevFX module detected"
-    #include "userrevfx.h"
-  #elif TARGET_MODULE == k_user_module_osc_val
-    #pragma message "OSC module detected"
-    #include "userosc.h"
-  #elif TARGET_MODULE == k_unit_module_modfx_val
-    #pragma message "ModFX module detected"
+    #define UNIT_TARGET_MODULE_MODFX
     #ifdef UNIT_TARGET_PLATFORM_DRUMLOGUE
       #include "unit.h"
-    #else
+    #elif defined(UNIT_TARGET_PLATFORM_NTS1_MKII)
       #include "unit_modfx.h"
+    #else
+      #include "usermodfx.h"
     #endif
   #elif TARGET_MODULE == k_unit_module_delfx_val
     #pragma message "DelFX module detected"
+    #define UNIT_TARGET_MODULE_DELFX
     #ifdef UNIT_TARGET_PLATFORM_DRUMLOGUE
       #include "unit.h"
-      #define UNIT_TARGET_MODULE_DELFX
-    #else
+    #elif defined(UNIT_TARGET_PLATFORM_NTS1_MKII)
       #include "unit_delfx.h"
+    #else
+      #include "userdel.h"
     #endif
   #elif TARGET_MODULE == k_unit_module_revfx_val
     #pragma message "RevFX module detected"
+    #define UNIT_TARGET_MODULE_REVFX
     #ifdef UNIT_TARGET_PLATFORM_DRUMLOGUE
       #include "unit.h"
-      #define UNIT_TARGET_MODULE_REVFX
-    #else
+    #elif defined(UNIT_TARGET_PLATFORM_NTS1_MKII)
       #include "unit_revfx.h"
+    #else
+      #include "userrevfx.h"
     #endif
   #elif TARGET_MODULE == k_unit_module_osc_val
     #pragma message "OSC module detected"
-    #include "unit_osc.h"
+    #define UNIT_TARGET_MODULE_OSC
     #undef UNIT_OUTPUT_CHANNELS
-    #define UNIT_OUTPUT_CHANNELS 1
+    #ifdef UNIT_TARGET_PLATFORM_NTS1_MKII
+      #define UNIT_OUTPUT_CHANNELS 1
+      #include "unit_osc.h"
+    #else
+      #include "userosc.h"
+    #endif
   #elif TARGET_MODULE == k_unit_module_synth_val
     #pragma message "Synth module detected"
-    #include "unit.h"
     #define UNIT_TARGET_MODULE_SYNTH
     #undef UNIT_INPUT_CHANNELS
     #define UNIT_INPUT_CHANNELS 0
+    #include "unit.h"
   #elif TARGET_MODULE == k_unit_module_masterfx_val
     #pragma message "MasterFX module detected"
-    #include "unit.h"
     #define UNIT_TARGET_MODULE_MASTERFX
     #undef UNIT_INPUT_CHANNELS
     #define UNIT_INPUT_CHANNELS 4
+    #include "unit.h"
   #elif TARGET_MODULE == k_unit_module_genericfx_val
     #pragma message "GenericFX module detected"
+    #define UNIT_TARGET_MODULE_GENERICFX
     #include "unit_genericfx.h"
   #else
     #pragma GCC error "Unsupported unit module target"
@@ -163,9 +157,6 @@
 #define UNIT_HEADER_TARGET_VALUE (UNIT_TARGET_PLATFORM | UNIT_TARGET_MODULE)
 
 #undef TARGET_PLATFORM
-#undef k_user_target_prologue_val
-#undef k_user_target_miniloguexd_val
-#undef k_user_target_nutektdigital_val
 #undef k_unit_target_prologue_val
 #undef k_unit_target_miniloguexd_val
 #undef k_unit_target_nts1_val
@@ -175,10 +166,6 @@
 #undef k_unit_target_nts3_kaoss_val
 
 #undef TARGET_MODULE
-#undef k_user_module_modfx_val
-#undef k_user_module_delfx_val
-#undef k_user_module_revfx_val
-#undef k_user_module_osc_val
 #undef k_unit_module_modfx_val
 #undef k_unit_module_delfx_val
 #undef k_unit_module_revfx_val
