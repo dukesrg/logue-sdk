@@ -1,0 +1,434 @@
+/*
+ *  File: morpheus.cc
+ *
+ *  Morphing wavetable oscillator
+ * 
+ *  2020-2024 (c) Oleg Burdaev
+ *  mailto: dukesrg@gmail.com
+ */
+
+#include "logue_wrap.h"
+
+#include "fixed_math.h"
+#include "simplelfo.hpp"
+#include "osc_apiq.h"
+
+#define SAMPLE_COUNT 256
+#define WAVE_COUNT 64
+#define WAVE_COUNT_X 8
+#define WAVE_COUNT_Y 8
+#include "wavebank.h"
+
+#define LFO_COUNT 2 //number of LFOs
+#define LFO_MAX_RATE .33333334f //maximum LFO rate in Hz divided by logarithmic slope 10/30
+#define LFO_RATE_LOG_BIAS 29.827234f //normalize logarithmic LFO for 0...1 log10(30+1)/0.05
+
+enum {
+  lfo_mode_one_shot = 0U,
+  lfo_mode_key_trigger,
+  lfo_mode_random,
+  lfo_mode_free_run,
+#if LFO_MODE_COUNT == 8
+  lfo_mode_one_shot_plus_shape_lfo,
+  lfo_mode_key_trigger_plus_shape_lfo,
+  lfo_mode_random_plus_shape_lfo,
+  lfo_mode_free_run_plus_shape_lfo,
+#endif
+  lfo_mode_linear
+};
+
+typedef struct {
+  uint32_t mode;
+  int32_t wave;
+  float depth;
+  float freq;
+  float shape;
+  float snh;
+  float offset;
+  dsp::SimpleLFO lfo;
+  q31_t phiold;
+} vco_t;
+
+static vco_t s_vco[LFO_COUNT];
+static float s_phase = 0.f;
+
+enum {
+#ifdef USER_TARGET_PLATFORM
+  param_lfo_rate_x = k_user_osc_param_shape,
+  param_lfo_rate_y = k_user_osc_param_shiftshape,
+  param_lfo_mode_x = k_user_osc_param_id1,
+  param_lfo_mode_y = k_user_osc_param_id2,
+  param_lfo_waveform_x = k_user_osc_param_id3,
+  param_lfo_waveform_y = k_user_osc_param_id4,
+  param_lfo_depth_x = k_user_osc_param_id5,
+  param_lfo_depth_y = k_user_osc_param_id6,
+#else
+  param_lfo_rate_x = 
+#ifdef UNIT_OSC_H_
+  k_num_unit_osc_fixed_param_id
+#else
+  0U
+#endif
+  ,
+  param_lfo_rate_y,
+  param_lfo_mode_x,
+  param_lfo_mode_y,
+  param_lfo_waveform_x,
+  param_lfo_waveform_y,
+  param_lfo_depth_x,
+  param_lfo_depth_y,
+#endif
+  param_num
+};  
+
+#ifdef UNIT_TARGET_PLATFORM
+static int32_t Params[PARAM_COUNT];
+#endif
+
+#ifdef UNIT_OSC_H_
+unit_runtime_osc_context_t *runtime_context;
+#else
+uint16_t pitch = 0x3C00;
+float amp;
+#endif
+
+#if defined(UNIT_TARGET_PLATFORM_NTS1_MKII) || defined(UNIT_TARGET_PLATFORM_NTS1)
+q31_t shape_lfo_old;
+#endif
+
+static inline __attribute__((optimize("Ofast"), always_inline))
+void set_vco_freq(uint32_t index) {
+  if (s_vco[1].mode != lfo_mode_linear)
+    s_vco[index].lfo.setF0(s_vco[index].freq, k_samplerate_recipf);
+  else if (index == 1)
+    s_vco[0].lfo.setF0(s_vco[1].freq, k_samplerate_recipf);
+}
+
+static inline __attribute__((optimize("Ofast"), always_inline))
+float get_vco(vco_t &vco) {
+  float x;
+
+  if ((vco.mode == lfo_mode_one_shot
+#if LFO_MODE_COUNT == 8
+  || vco.mode == lfo_mode_one_shot_plus_shape_lfo
+#endif
+  ) && vco.phiold > 0 && vco.lfo.phi0 <= 0) {
+    vco.lfo.phi0 = 0x7FFFFFFF;
+    vco.lfo.w0 = 0;
+  }
+
+  switch (vco.wave) {
+    case 0:
+      x = vco.lfo.saw_bi();
+     break;
+    case 1:
+      x = vco.lfo.triangle_bi();
+      break;
+    case 2:
+      x = vco.lfo.square_bi();
+      break;
+    case 3:
+      x = vco.lfo.sine_bi();
+      break;
+    case 4:
+      if (vco.phiold > 0 && vco.lfo.phi0 <= 0)
+        vco.snh = osc_white();
+      x = vco.snh;
+      break;
+    default:
+      x = q31_to_f32(vco.lfo.phi0) * .5f + .5f;
+#if LFO_WAVEFORM_COUNT == 159
+      if (vco.wave >= (5 + WAVE_COUNT))
+        x = osc_wave_scanf(wavesAll[vco.wave - (5 + WAVE_COUNT)], x);
+      else
+#endif
+        x = osc_wavebank(x, (uint32_t)(vco.wave - 5));
+      break;
+  }
+
+  vco.phiold = vco.lfo.phi0;
+  vco.lfo.cycle();
+
+  return clipminmaxf(0.f, x * vco.depth + vco.offset, 1.f);
+}
+
+static inline __attribute__((optimize("Ofast"), always_inline))
+void note_on() {
+  s_phase = 0.f;
+  for (uint32_t i = 0; i < LFO_COUNT; i++) {
+    set_vco_freq(i);
+    if (s_vco[i].wave == 4)
+      s_vco[i].snh = osc_white();
+    switch (s_vco[i].mode) {
+      case lfo_mode_one_shot:
+      case lfo_mode_key_trigger:
+#if LFO_MODE_COUNT == 8
+      case lfo_mode_key_trigger_plus_shape_lfo:
+      case lfo_mode_one_shot_plus_shape_lfo:
+#endif
+        s_vco[i].lfo.reset();
+        s_vco[i].phiold = s_vco[i].lfo.phi0;
+        break;
+      case lfo_mode_random:
+#if LFO_MODE_COUNT == 8
+      case lfo_mode_random_plus_shape_lfo:
+#endif
+        s_vco[i].lfo.phi0 = f32_to_q31(osc_white());
+      default:
+        break;
+    }
+  }
+}
+
+#ifdef USER_TARGET_PLATFORM
+void OSC_INIT(__attribute__((unused)) uint32_t platform, __attribute__((unused)) uint32_t api) {
+#else
+__unit_callback int8_t unit_init(const unit_runtime_desc_t * desc) {
+  if (!desc)
+    return k_unit_err_undef;
+  if (desc->target != UNIT_HEADER_TARGET_FIELD)
+    return k_unit_err_target;
+  if (!UNIT_API_IS_COMPAT(desc->api))
+    return k_unit_err_api_version;
+  if (desc->samplerate != 48000)
+    return k_unit_err_samplerate;
+  if (desc->input_channels != UNIT_INPUT_CHANNELS || desc->output_channels != UNIT_OUTPUT_CHANNELS)
+    return k_unit_err_geometry;
+#ifdef UNIT_OSC_H_
+  runtime_context = (unit_runtime_osc_context_t *)desc->hooks.runtime_context;
+#endif
+#endif
+#if LFO_WAVEFORM_COUNT == 159
+  osc_wave_init_all();
+#endif
+#ifndef USER_TARGET_PLATFORM
+  return k_unit_err_none;
+#endif
+}
+
+#ifdef USER_TARGET_PLATFORM
+void OSC_CYCLE(const user_osc_param_t * const runtime_context, int32_t * out, const uint32_t frames) {
+#else
+__unit_callback void unit_render(const float * in, float * out, uint32_t frames) {
+  (void) in;
+#endif
+#ifdef UNIT_TARGET_MODULE_OSC
+  float w0 = osc_w0f_for_note(runtime_context->pitch >> 8, runtime_context->pitch & 0xFF);
+#else
+  float w0 = osc_w0f_for_note(pitch >> 8, pitch & 0xFF);
+#endif
+  unit_output_type_t * __restrict out_p = out;
+  const unit_output_type_t * out_e = out_p + frames * UNIT_OUTPUT_CHANNELS;  
+
+  for (uint32_t i = 0; i < LFO_COUNT; i++) {
+    s_vco[i].offset = .5f;
+#ifdef UNIT_TARGET_MODULE_OSC
+    if (s_vco[i].mode >= lfo_mode_one_shot_plus_shape_lfo) {
+#if defined(UNIT_TARGET_PLATFORM_NTS1_MKII) || defined(UNIT_TARGET_PLATFORM_NTS1)
+      if (runtime_context->shape_lfo | shape_lfo_old)
+        s_vco[i].offset += q31_to_f32(runtime_context->shape_lfo) - .5f;
+      shape_lfo_old = runtime_context->shape_lfo;
+#else
+      s_vco[i].offset += q31_to_f32(runtime_context->shape_lfo) * .5f;
+#endif
+    }
+#endif
+    if (s_vco[i].depth == 0.f)
+      s_vco[i].offset += s_vco[i].shape - 0.5;
+  }
+
+  if (s_vco[1].mode == lfo_mode_linear) {
+    if (s_vco[0].depth != 0.f)
+      s_vco[0].offset += s_vco[0].shape - 0.5;
+    for (; out_p != out_e; out_p += UNIT_OUTPUT_CHANNELS) {
+      out_p[0] = float_to_output(osc_wavebank(s_phase, get_vco(s_vco[0]) * (WAVE_COUNT - 1)));
+#if UNIT_OUTPUT_CHANNELS == 2
+#ifdef UNIT_TARGET_PLATFORM_NTS3_KAOSS
+      out_p[0] *= amp;
+#endif
+      out_p[1] = out_p[0];
+#endif
+      s_phase += w0;
+      s_phase -= (uint32_t)s_phase;
+    }
+  } else {
+    for (; out_p != out_e; out_p += UNIT_OUTPUT_CHANNELS) {
+      out_p[0] = float_to_output(osc_wavebank(s_phase, get_vco(s_vco[0]) * (WAVE_COUNT_X - 1), get_vco(s_vco[1]) * (WAVE_COUNT_Y - 1)));
+#if UNIT_OUTPUT_CHANNELS == 2
+#ifdef UNIT_TARGET_PLATFORM_NTS3_KAOSS
+      out_p[0] *= amp;
+#endif
+      out_p[1] = out_p[0];
+#endif
+      s_phase += w0;
+      s_phase -= (uint32_t)s_phase;
+    }
+  }
+}
+
+#ifdef UNIT_TARGET_MODULE_OSC
+#ifndef UNIT_OSC_H_
+void OSC_NOTEON(__attribute__((unused)) const user_osc_param_t * const params) {
+#else
+__unit_callback void unit_note_on(uint8_t note, uint8_t velocity) {
+  (void)note;
+  (void)velocity;
+#endif
+  note_on();
+}
+
+#ifndef UNIT_OSC_H_
+void OSC_NOTEOFF(const user_osc_param_t * const params) {
+  (void)params;
+#else
+__unit_callback void unit_note_off(uint8_t note) {
+  (void)note;
+#endif
+}
+
+#ifdef UNIT_OSC_H_
+__unit_callback void unit_all_note_off() {}
+
+__unit_callback void unit_channel_pressure(uint8_t pressure) {
+  (void)pressure;
+}
+
+__unit_callback void unit_aftertouch(uint8_t note, uint8_t aftertouch) {
+  (void)note;
+  (void)aftertouch;
+}
+#endif
+#endif
+
+#ifdef USER_TARGET_PLATFORM
+void OSC_PARAM(uint16_t index, uint16_t value) {
+#else
+__unit_callback void unit_set_param_value(uint8_t index, int32_t value) {
+  value = (int16_t)value;
+#ifdef UNIT_TARGET_PLATFORM_NTS1_MKII
+  if (index < k_num_unit_osc_fixed_param_id)
+    index += k_num_unit_osc_fixed_param_id;
+#endif
+  Params[index] = value;
+#endif
+  switch (index) {
+    case param_lfo_rate_x:
+    case param_lfo_rate_y:
+      index -= param_lfo_rate_x;
+      s_vco[index].shape = param_val_to_f32(value);
+      s_vco[index].freq = (fasterdbampf(s_vco[index].shape * LFO_RATE_LOG_BIAS) - 1.f) * LFO_MAX_RATE;
+      set_vco_freq(index);
+      break;
+    case param_lfo_mode_x:
+    case param_lfo_mode_y:
+      index -= param_lfo_mode_x;
+      s_vco[index].mode = value;
+      set_vco_freq(index);
+      break;
+    case param_lfo_waveform_x:
+    case param_lfo_waveform_y:
+      index -= param_lfo_waveform_x;
+#ifdef USER_TARGET_PLATFORM
+      if (value == 0)
+        value = 100;
+      s_vco[index].wave = value < 100 ? (104 + WAVE_COUNT - value) : (value - 100);
+#else
+      s_vco[index].wave = value;
+#endif
+      break;
+    case param_lfo_depth_x:
+    case param_lfo_depth_y:
+      index -= param_lfo_depth_x;
+#ifdef USER_TARGET_PLATFORM
+      s_vco[index].depth = ((int32_t)value - 100) * .005f;
+#else
+      s_vco[index].depth = value * .005f;
+#endif
+      break;
+  }
+}
+
+#ifdef UNIT_TARGET_PLATFORM
+__unit_callback int32_t unit_get_param_value(uint8_t index) {
+#ifdef UNIT_TARGET_PLATFORM_NTS1_MKII
+  if (index < k_num_unit_osc_fixed_param_id)
+    index += k_num_unit_osc_fixed_param_id;
+#endif
+  return Params[index];
+}
+
+__unit_callback const char * unit_get_param_str_value(uint8_t index, int32_t value) {
+  static const char mode[][5] = {
+    "1 ", "T ", "R ", "F ",
+#if LFO_MODE_COUNT == 8
+    "1. ", "T. ", "R. ", "F. ",
+#endif
+    "OFF"
+  };
+  static char wfnames[][4] = {"Saw", "Tri", "Sqr", "Sin", "SnH"};
+  static char string[][5] = {"WT  ", "WA  ", "WB  ", "WC  ", "WD  ", "WE  ", "WF  "};
+  static const uint8_t wfcounts[] = {WAVE_COUNT, 16, 16, 14, 13, 15, 16};
+  static char *s;
+
+  value = (int16_t)value;
+  switch (index) {
+    case param_lfo_mode_x:
+    case param_lfo_mode_y:
+      return mode[value];
+    case param_lfo_waveform_x:
+    case param_lfo_waveform_y:
+      if (value < 5)
+        return wfnames[value];
+      value -= 5;
+      for (uint32_t i = 0; i < sizeof(wfcounts); i++) {
+        s = string[i];
+        if (value < wfcounts[i]) {
+          value++;
+          uint32_t j = value / 10;
+          s[2] = '0' + j;
+          s[3] = '0' + (value - j * 10);
+          break;
+        }
+        value -= wfcounts[i];
+      }
+      return s;
+    default:
+      break;
+  }
+  return nullptr;
+}
+
+__unit_callback void unit_set_tempo(uint32_t tempo) {
+  (void)tempo;  
+}
+
+__unit_callback void unit_tempo_4ppqn_tick(uint32_t counter) {
+  (void)counter;
+}
+
+__unit_callback void unit_reset() {}
+
+__unit_callback void unit_resume() {}
+
+__unit_callback void unit_suspend() {}
+#endif
+
+#ifdef UNIT_TARGET_PLATFORM_NTS3_KAOSS
+__unit_callback void unit_touch_event(uint8_t id, uint8_t phase, uint32_t x, uint32_t y) {
+  (void)id;
+  (void)x;
+  (void)y;
+  switch(phase) {
+    case k_unit_touch_phase_began:
+      note_on();
+      amp = 1.f;
+      break;
+    case k_unit_touch_phase_ended:
+    case k_unit_touch_phase_cancelled:
+      amp = 0.f;
+      break;
+    default:
+      break;
+  }
+}
+#endif
