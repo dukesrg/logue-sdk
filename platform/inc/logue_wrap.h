@@ -81,6 +81,9 @@
 
 #define UNIT_INPUT_CHANNELS 2
 #define UNIT_OUTPUT_CHANNELS 2
+#define unit_output_type_t float
+#define float_to_output(a) (a)
+#define q31_to_output(a) (q31_to_f32(a))
 
 #ifdef TARGET_MODULE
   #if TARGET_MODULE == k_unit_module_modfx_val
@@ -117,11 +120,17 @@
     #pragma message "OSC module detected"
     #define UNIT_TARGET_MODULE_OSC
     #undef UNIT_OUTPUT_CHANNELS
+    #define UNIT_OUTPUT_CHANNELS 1
     #ifdef UNIT_TARGET_PLATFORM_NTS1_MKII
-      #define UNIT_OUTPUT_CHANNELS 1
       #include "unit_osc.h"
     #else
       #include "userosc.h"
+      #undef unit_output_type_t
+      #define unit_output_type_t q31_t
+      #undef float_to_output
+      #define float_to_output(a) (f32_to_q31(a))
+      #undef q31_to_output
+      #define q31_to_output(a) (a)
     #endif
   #elif TARGET_MODULE == k_unit_module_synth_val
     #pragma message "Synth module detected"
