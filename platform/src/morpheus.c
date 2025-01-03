@@ -22,30 +22,36 @@ const __unit_header UNIT_HEADER_TYPE unit_header = {
     .name = UNIT_NAME,
     .num_params = PARAM_COUNT,
     .params = {
-#ifdef UNIT_TARGET_PLATFORM_NTS1_MKII
-        {0, 1023, 0, 0, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {"LFO X"}},
-        {0, 1023, 0, 0, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {"LFO Y"}},
+#ifdef UNIT_TARGET_MODULE_OSC
+        {0, 1023, 0, 0, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {"X Value"}},
+        {0, 1023, 0, 0, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {"Y Value"}},
 #endif
-        {0, 1023, 0, 0, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {"LFO X"}},
-        {0, 1023, 0, 0, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {"LFO Y"}},
-        {0, LFO_MODE_COUNT - 1, 0, 0, k_unit_param_type_strings, 0, k_unit_param_frac_mode_fixed, 0, {"LFO X mode"}},
-        {0, LFO_MODE_COUNT, 0, 0, k_unit_param_type_strings, 0, k_unit_param_frac_mode_fixed, 0, {"LFO Y mode"}},
-        {0, LFO_WAVEFORM_COUNT - 1, 0, 0, k_unit_param_type_strings, 0, k_unit_param_frac_mode_fixed, 0, {"LFO X wave"}},
-        {0, LFO_WAVEFORM_COUNT - 1, 0, 0, k_unit_param_type_strings, 0, k_unit_param_frac_mode_fixed, 0, {"LFO Y wave"}},
-        {-100, 100, 0, 0, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {"LFO X depth"}},
-        {-100, 100, 0, 0, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {"LFO Y depth"}}
+#ifdef UNIT_TARGET_MODULE_OSC
+        {0, 1023, 0, 0, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {"X Value"}},
+        {0, 1023, 0, 0, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {"Y Value"}},
+#endif
+        {0, LFO_MODE_COUNT - 1, 0, 0, k_unit_param_type_strings, 0, k_unit_param_frac_mode_fixed, 0, {"X Mode"}},
+        {0, LFO_MODE_COUNT, 0, 0, k_unit_param_type_strings, 0, k_unit_param_frac_mode_fixed, 0, {"Y Mode"}},
+        {0, LFO_WAVEFORM_COUNT - 1, 0, 0, k_unit_param_type_strings, 0, k_unit_param_frac_mode_fixed, 0, {"X Wave"}},
+        {0, LFO_WAVEFORM_COUNT - 1, 0, 0, k_unit_param_type_strings, 0, k_unit_param_frac_mode_fixed, 0, {"Y Wave"}},
+        {-100, 100, 0, 0, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {"X Depth"}},
+        {-100, 100, 0, 0, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {"Y Depth"}},
+#ifndef UNIT_TARGET_MODULE_OSC
+        {0, 1023, 0, 480, k_unit_param_type_midi_note, 0, k_unit_param_frac_mode_fixed, 0, {"Pitch"}},
+        {0, 0, 0, 0, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {""}},
+#endif
     }
 #ifdef UNIT_TARGET_PLATFORM_NTS3_KAOSS
     },
     .default_mappings = {
-        {k_genericfx_param_assign_x, k_genericfx_curve_linear, k_genericfx_curve_unipolar, 0, 1023, 0},
-        {k_genericfx_param_assign_y, k_genericfx_curve_linear, k_genericfx_curve_unipolar, 0, 1023, 0},
         {k_genericfx_param_assign_none, k_genericfx_curve_linear, k_genericfx_curve_unipolar, 0, LFO_MODE_COUNT - 1, 0},
         {k_genericfx_param_assign_none, k_genericfx_curve_linear, k_genericfx_curve_unipolar, 0, LFO_MODE_COUNT, 0},
         {k_genericfx_param_assign_none, k_genericfx_curve_linear, k_genericfx_curve_unipolar, 0, LFO_WAVEFORM_COUNT - 1, 0},
         {k_genericfx_param_assign_none, k_genericfx_curve_linear, k_genericfx_curve_unipolar, 0, LFO_WAVEFORM_COUNT - 1, 0},
         {k_genericfx_param_assign_none, k_genericfx_curve_linear, k_genericfx_curve_unipolar, -100, 100, 0},
-        {k_genericfx_param_assign_none, k_genericfx_curve_linear, k_genericfx_curve_unipolar, -100, 100, 0}
+        {k_genericfx_param_assign_none, k_genericfx_curve_linear, k_genericfx_curve_unipolar, -100, 100, 0},
+        {k_genericfx_param_assign_depth, k_genericfx_curve_linear, k_genericfx_curve_unipolar, 0, 1023, 480},
+        {k_genericfx_param_assign_none, k_genericfx_curve_linear, k_genericfx_curve_unipolar, 0, 0, 0},
     }
 #endif
 };

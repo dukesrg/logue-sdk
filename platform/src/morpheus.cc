@@ -19,7 +19,6 @@
 #define WAVE_COUNT_Y 8
 #include "wavebank.h"
 
-#define LFO_COUNT 2 //number of LFOs
 #define LFO_MAX_RATE .33333334f //maximum LFO rate in Hz divided by logarithmic slope 10/30
 #define LFO_RATE_LOG_BIAS 29.827234f //normalize logarithmic LFO for 0...1 log10(30+1)/0.05
 
@@ -37,6 +36,14 @@ enum {
   lfo_mode_linear
 };
 
+enum {
+  lfo_axis_x = 0U,
+  lfo_axis_y,
+#if LFO_AXES_COUNT == 3
+  lfo_axis_z
+#endif
+};
+
 typedef struct {
   uint32_t mode;
   int32_t wave;
@@ -49,7 +56,7 @@ typedef struct {
   q31_t phiold;
 } vco_t;
 
-static vco_t s_vco[LFO_COUNT];
+static vco_t s_vco[LFO_AXES_COUNT];
 static float s_phase = 0.f;
 
 enum {
@@ -63,20 +70,21 @@ enum {
   param_lfo_depth_x = k_user_osc_param_id5,
   param_lfo_depth_y = k_user_osc_param_id6,
 #else
-  param_lfo_rate_x = 
-#ifdef UNIT_OSC_H_
-  k_num_unit_osc_fixed_param_id
-#else
-  0U
-#endif
-  ,
+#ifdef UNIT_TARGET_MODULE_OSC
+  param_lfo_rate_x = k_num_unit_osc_fixed_param_id,
   param_lfo_rate_y,
   param_lfo_mode_x,
+#else
+  param_lfo_mode_x = 0U,
+#endif
   param_lfo_mode_y,
   param_lfo_waveform_x,
   param_lfo_waveform_y,
   param_lfo_depth_x,
   param_lfo_depth_y,
+#ifndef UNIT_TARGET_MODULE_OSC
+  param_pitch,
+#endif
 #endif
   param_num
 };  
@@ -92,6 +100,12 @@ uint16_t pitch = 0x3C00;
 float amp;
 #endif
 
+#ifdef UNIT_TARGET_MODULE_OSC
+#define PITCH runtime_context->pitch
+#else
+#define PITCH pitch
+#endif
+
 #if defined(UNIT_TARGET_PLATFORM_NTS1_MKII) || defined(UNIT_TARGET_PLATFORM_NTS1)
 q31_t shape_lfo_old;
 #endif
@@ -102,6 +116,13 @@ void set_vco_freq(uint32_t index) {
     s_vco[index].lfo.setF0(s_vco[index].freq, k_samplerate_recipf);
   else if (index == 1)
     s_vco[0].lfo.setF0(s_vco[1].freq, k_samplerate_recipf);
+}
+
+static inline __attribute__((optimize("Ofast"), always_inline))
+void set_vco_rate(uint32_t index, uint32_t value) {
+  s_vco[index].shape = param_val_to_f32(value);
+  s_vco[index].freq = (fasterdbampf(s_vco[index].shape * LFO_RATE_LOG_BIAS) - 1.f) * LFO_MAX_RATE;
+  set_vco_freq(index);
 }
 
 static inline __attribute__((optimize("Ofast"), always_inline))
@@ -155,7 +176,7 @@ float get_vco(vco_t &vco) {
 static inline __attribute__((optimize("Ofast"), always_inline))
 void note_on() {
   s_phase = 0.f;
-  for (uint32_t i = 0; i < LFO_COUNT; i++) {
+  for (uint32_t i = 0; i < LFO_AXES_COUNT; i++) {
     set_vco_freq(i);
     if (s_vco[i].wave == 4)
       s_vco[i].snh = osc_white();
@@ -212,15 +233,11 @@ void OSC_CYCLE(const user_osc_param_t * const runtime_context, int32_t * out, co
 __unit_callback void unit_render(const float * in, float * out, uint32_t frames) {
   (void) in;
 #endif
-#ifdef UNIT_TARGET_MODULE_OSC
-  float w0 = osc_w0f_for_note(runtime_context->pitch >> 8, runtime_context->pitch & 0xFF);
-#else
-  float w0 = osc_w0f_for_note(pitch >> 8, pitch & 0xFF);
-#endif
+  float w0 = osc_w0f_for_note(PITCH >> 8, PITCH & 0xFF);
   unit_output_type_t * __restrict out_p = out;
   const unit_output_type_t * out_e = out_p + frames * UNIT_OUTPUT_CHANNELS;  
 
-  for (uint32_t i = 0; i < LFO_COUNT; i++) {
+  for (uint32_t i = 0; i < LFO_AXES_COUNT; i++) {
     s_vco[i].offset = .5f;
 #ifdef UNIT_TARGET_MODULE_OSC
     if (s_vco[i].mode >= lfo_mode_one_shot_plus_shape_lfo) {
@@ -304,7 +321,6 @@ __unit_callback void unit_aftertouch(uint8_t note, uint8_t aftertouch) {
 void OSC_PARAM(uint16_t index, uint16_t value) {
 #else
 __unit_callback void unit_set_param_value(uint8_t index, int32_t value) {
-  value = (int16_t)value;
 #ifdef UNIT_TARGET_PLATFORM_NTS1_MKII
   if (index < k_num_unit_osc_fixed_param_id)
     index += k_num_unit_osc_fixed_param_id;
@@ -312,13 +328,17 @@ __unit_callback void unit_set_param_value(uint8_t index, int32_t value) {
   Params[index] = value;
 #endif
   switch (index) {
+#ifdef UNIT_TARGET_MODULE_OSC
     case param_lfo_rate_x:
     case param_lfo_rate_y:
       index -= param_lfo_rate_x;
-      s_vco[index].shape = param_val_to_f32(value);
-      s_vco[index].freq = (fasterdbampf(s_vco[index].shape * LFO_RATE_LOG_BIAS) - 1.f) * LFO_MAX_RATE;
-      set_vco_freq(index);
+      set_vco_rate(index, value);
       break;
+#else
+    case param_pitch:
+      pitch = value << 5 & 0xFF00;
+      break;
+#endif
     case param_lfo_mode_x:
     case param_lfo_mode_y:
       index -= param_lfo_mode_x;
@@ -329,21 +349,17 @@ __unit_callback void unit_set_param_value(uint8_t index, int32_t value) {
     case param_lfo_waveform_y:
       index -= param_lfo_waveform_x;
 #ifdef USER_TARGET_PLATFORM
-      if (value == 0)
-        value = 100;
-      s_vco[index].wave = value < 100 ? (104 + WAVE_COUNT - value) : (value - 100);
-#else
-      s_vco[index].wave = value;
+      value = value == 0 ? 0 : value < 100 ? (104 + WAVE_COUNT - value) : (value - 100);
 #endif
+      s_vco[index].wave = value;
       break;
     case param_lfo_depth_x:
     case param_lfo_depth_y:
       index -= param_lfo_depth_x;
 #ifdef USER_TARGET_PLATFORM
-      s_vco[index].depth = ((int32_t)value - 100) * .005f;
-#else
-      s_vco[index].depth = value * .005f;
+      value -= 100;
 #endif
+      s_vco[index].depth = (int16_t)value * .005f;
       break;
   }
 }
@@ -392,8 +408,6 @@ __unit_callback const char * unit_get_param_str_value(uint8_t index, int32_t val
         value -= wfcounts[i];
       }
       return s;
-    default:
-      break;
   }
   return nullptr;
 }
@@ -416,18 +430,19 @@ __unit_callback void unit_suspend() {}
 #ifdef UNIT_TARGET_PLATFORM_NTS3_KAOSS
 __unit_callback void unit_touch_event(uint8_t id, uint8_t phase, uint32_t x, uint32_t y) {
   (void)id;
-  (void)x;
-  (void)y;
   switch(phase) {
     case k_unit_touch_phase_began:
       note_on();
       amp = 1.f;
+//fall through
+    case k_unit_touch_phase_moved:
+    case k_unit_touch_phase_stationary:
+      set_vco_rate(lfo_axis_x, x);
+      set_vco_rate(lfo_axis_y, y);
       break;
     case k_unit_touch_phase_ended:
     case k_unit_touch_phase_cancelled:
       amp = 0.f;
-      break;
-    default:
       break;
   }
 }
