@@ -3,7 +3,7 @@
  *
  *  Morphing wavetable oscillator unit header
  *
- *  2024 (c) Oleg Burdaev
+ *  2024-2025 (c) Oleg Burdaev
  *  mailto: dukesrg@gmail.com
  */
 

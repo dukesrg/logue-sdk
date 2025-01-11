@@ -3,7 +3,7 @@
  *
  *  Morphing wavetable oscillator
  * 
- *  2020-2024 (c) Oleg Burdaev
+ *  2020-2025 (c) Oleg Burdaev
  *  mailto: dukesrg@gmail.com
  */
 
@@ -112,10 +112,10 @@ q31_t shape_lfo_old;
 
 static inline __attribute__((optimize("Ofast"), always_inline))
 void set_vco_freq(uint32_t index) {
-  if (s_vco[1].mode != lfo_mode_linear)
+//  if (s_vco[lfo_axis_y].mode != lfo_mode_linear)
     s_vco[index].lfo.setF0(s_vco[index].freq, k_samplerate_recipf);
-  else if (index == 1)
-    s_vco[0].lfo.setF0(s_vco[1].freq, k_samplerate_recipf);
+//  else if (index == lfo_axis_y)
+//    s_vco[lfo_axis_x].lfo.setF0(s_vco[lfo_axis_y].freq, k_samplerate_recipf);
 }
 
 static inline __attribute__((optimize("Ofast"), always_inline))
@@ -251,18 +251,20 @@ __unit_callback void unit_render(const float * in, float * out, uint32_t frames)
     }
 #endif
     if (s_vco[i].depth == 0.f)
-      s_vco[i].offset += s_vco[i].shape - 0.5;
+      s_vco[i].offset += s_vco[i].shape - .5f;
   }
 
-  if (s_vco[1].mode == lfo_mode_linear) {
-    if (s_vco[0].depth != 0.f)
-      s_vco[0].offset += s_vco[0].shape - 0.5;
+  if (s_vco[lfo_axis_y].mode == lfo_mode_linear) {
+//    if (s_vco[lfo_axis_x].depth != 0.f)
+//      s_vco[lfo_axis_x].offset += s_vco[lfo_axis_x].shape - .5f;
     for (; out_p != out_e; out_p += UNIT_OUTPUT_CHANNELS) {
-      out_p[0] = float_to_output(osc_wavebank(s_phase, get_vco(s_vco[0]) * (WAVE_COUNT - 1)));
-#if UNIT_OUTPUT_CHANNELS == 2
+      out_p[0] = float_to_output(osc_wavebank(s_phase, get_vco(s_vco[lfo_axis_x]) * (WAVE_COUNT - 1))
+        * (get_vco(s_vco[lfo_axis_y]) - s_vco[lfo_axis_y].offset + s_vco[lfo_axis_y].depth) 
 #ifdef UNIT_TARGET_PLATFORM_NTS3_KAOSS
-      out_p[0] *= amp;
+        * amp
 #endif
+      );
+#if UNIT_OUTPUT_CHANNELS == 2
       out_p[1] = out_p[0];
 #endif
       s_phase += w0;
@@ -270,11 +272,12 @@ __unit_callback void unit_render(const float * in, float * out, uint32_t frames)
     }
   } else {
     for (; out_p != out_e; out_p += UNIT_OUTPUT_CHANNELS) {
-      out_p[0] = float_to_output(osc_wavebank(s_phase, get_vco(s_vco[0]) * (WAVE_COUNT_X - 1), get_vco(s_vco[1]) * (WAVE_COUNT_Y - 1)));
-#if UNIT_OUTPUT_CHANNELS == 2
+      out_p[0] = float_to_output(osc_wavebank(s_phase, get_vco(s_vco[lfo_axis_x]) * (WAVE_COUNT_X - 1), get_vco(s_vco[lfo_axis_y]) * (WAVE_COUNT_Y - 1))
 #ifdef UNIT_TARGET_PLATFORM_NTS3_KAOSS
-      out_p[0] *= amp;
+        * amp
 #endif
+      );
+#if UNIT_OUTPUT_CHANNELS == 2
       out_p[1] = out_p[0];
 #endif
       s_phase += w0;
