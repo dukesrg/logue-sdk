@@ -30,8 +30,8 @@ const __unit_header UNIT_HEADER_TYPE unit_header = {
         {0, 1023, 0, 0, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {"X Value"}},
         {0, 1023, 0, 0, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {"Y Value"}},
 #endif
-        {0, LFO_MODE_COUNT - 1, 0, 0, k_unit_param_type_strings, 0, k_unit_param_frac_mode_fixed, 0, {"X Mode"}},
-        {0, LFO_MODE_COUNT, 0, 0, k_unit_param_type_strings, 0, k_unit_param_frac_mode_fixed, 0, {"Y Mode"}},
+        {0, LFO_MODE_COUNT * LFO_MODE_COUNT - 1, 0, 0, k_unit_param_type_strings, 0, k_unit_param_frac_mode_fixed, 0, {"Modes"}},
+        {0, 10, 0, 0, k_unit_param_type_strings, 0, k_unit_param_frac_mode_fixed, 0, {"Dimensions"}},
         {0, LFO_WAVEFORM_COUNT - 1, 0, 0, k_unit_param_type_strings, 0, k_unit_param_frac_mode_fixed, 0, {"X Wave"}},
         {0, LFO_WAVEFORM_COUNT - 1, 0, 0, k_unit_param_type_strings, 0, k_unit_param_frac_mode_fixed, 0, {"Y Wave"}},
         {-100, 100, 0, 0, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {"X Depth"}},
@@ -44,7 +44,7 @@ const __unit_header UNIT_HEADER_TYPE unit_header = {
 #ifdef UNIT_TARGET_PLATFORM_NTS3_KAOSS
     },
     .default_mappings = {
-        {k_genericfx_param_assign_none, k_genericfx_curve_linear, k_genericfx_curve_unipolar, 0, LFO_MODE_COUNT - 1, 0},
+        {k_genericfx_param_assign_none, k_genericfx_curve_linear, k_genericfx_curve_unipolar, 0, LFO_MODE_COUNT * LFO_MODE_COUNT - 1, 0},
         {k_genericfx_param_assign_none, k_genericfx_curve_linear, k_genericfx_curve_unipolar, 0, LFO_MODE_COUNT, 0},
         {k_genericfx_param_assign_none, k_genericfx_curve_linear, k_genericfx_curve_unipolar, 0, LFO_WAVEFORM_COUNT - 1, 0},
         {k_genericfx_param_assign_none, k_genericfx_curve_linear, k_genericfx_curve_unipolar, 0, LFO_WAVEFORM_COUNT - 1, 0},

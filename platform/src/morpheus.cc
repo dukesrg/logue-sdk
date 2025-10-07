@@ -19,6 +19,9 @@
 #define WAVE_COUNT_Y 8
 #include "wavebank.h"
 
+#define WAVE_COUNT_EXP 6
+#define LFO_AXES_COUNT 2
+
 #define LFO_MAX_RATE .33333334f //maximum LFO rate in Hz divided by logarithmic slope 10/30
 #define LFO_RATE_LOG_BIAS 29.827234f //normalize logarithmic LFO for 0...1 log10(30+1)/0.05
 
@@ -33,20 +36,26 @@ enum {
   lfo_mode_random_plus_shape_lfo,
   lfo_mode_free_run_plus_shape_lfo,
 #endif
-  lfo_mode_linear
 };
 
 enum {
   lfo_axis_x = 0U,
-  lfo_axis_y,
-#if LFO_AXES_COUNT == 3
-  lfo_axis_z
-#endif
+  lfo_axis_y
+};
+
+enum {
+  lfo_mod_amp,
+  lfo_mod_ring,
+  lfo_mod_phase,
+  lfo_mod_none
 };
 
 typedef struct {
   uint32_t mode;
-  int32_t wave;
+  uint32_t wave;
+  uint32_t dimensionexp;  
+  uint32_t dimension;
+  uint32_t modulation;
   float depth;
   float freq;
   float shape;
@@ -63,8 +72,8 @@ enum {
 #ifdef USER_TARGET_PLATFORM
   param_lfo_rate_x = k_user_osc_param_shape,
   param_lfo_rate_y = k_user_osc_param_shiftshape,
-  param_lfo_mode_x = k_user_osc_param_id1,
-  param_lfo_mode_y = k_user_osc_param_id2,
+  param_lfo_modes = k_user_osc_param_id1,
+  param_lfo_dimensions = k_user_osc_param_id2,
   param_lfo_waveform_x = k_user_osc_param_id3,
   param_lfo_waveform_y = k_user_osc_param_id4,
   param_lfo_depth_x = k_user_osc_param_id5,
@@ -73,11 +82,11 @@ enum {
 #ifdef UNIT_TARGET_MODULE_OSC
   param_lfo_rate_x = k_num_unit_osc_fixed_param_id,
   param_lfo_rate_y,
-  param_lfo_mode_x,
+  param_lfo_modes,
 #else
-  param_lfo_mode_x = 0U,
+  param_lfo_modes = 0U,
 #endif
-  param_lfo_mode_y,
+  param_lfo_dimensions,
   param_lfo_waveform_x,
   param_lfo_waveform_y,
   param_lfo_depth_x,
@@ -112,10 +121,7 @@ q31_t shape_lfo_old;
 
 static inline __attribute__((optimize("Ofast"), always_inline))
 void set_vco_freq(uint32_t index) {
-//  if (s_vco[lfo_axis_y].mode != lfo_mode_linear)
     s_vco[index].lfo.setF0(s_vco[index].freq, k_samplerate_recipf);
-//  else if (index == lfo_axis_y)
-//    s_vco[lfo_axis_x].lfo.setF0(s_vco[lfo_axis_y].freq, k_samplerate_recipf);
 }
 
 static inline __attribute__((optimize("Ofast"), always_inline))
@@ -242,11 +248,13 @@ __unit_callback void unit_render(const float * in, float * out, uint32_t frames)
 #ifdef UNIT_TARGET_MODULE_OSC
     if (s_vco[i].mode >= lfo_mode_one_shot_plus_shape_lfo) {
 #if defined(UNIT_TARGET_PLATFORM_NTS1_MKII) || defined(UNIT_TARGET_PLATFORM_NTS1)
+//ToDo: unipolar LFO for AMP mod
       if (runtime_context->shape_lfo | shape_lfo_old)
         s_vco[i].offset += q31_to_f32(runtime_context->shape_lfo) - .5f;
       shape_lfo_old = runtime_context->shape_lfo;
 #else
-      s_vco[i].offset += q31_to_f32(runtime_context->shape_lfo) * .5f;
+      if (s_vco[i].modulation == lfo_mod_amp)
+        s_vco[i].offset += q31_to_f32(runtime_context->shape_lfo) * .5f;
 #endif
     }
 #endif
@@ -254,16 +262,39 @@ __unit_callback void unit_render(const float * in, float * out, uint32_t frames)
       s_vco[i].offset += s_vco[i].shape - .5f;
   }
 
-  if (s_vco[lfo_axis_y].mode == lfo_mode_linear) {
-//    if (s_vco[lfo_axis_x].depth != 0.f)
-//      s_vco[lfo_axis_x].offset += s_vco[lfo_axis_x].shape - .5f;
+  if (s_vco[lfo_axis_x].dimensionexp == 0 || s_vco[lfo_axis_y].dimensionexp == 0) {
+    uint32_t wave_axis;
+    uint32_t mod_axis;
+    if (s_vco[lfo_axis_x].modulation == lfo_mod_none) {
+      wave_axis = lfo_axis_x;
+      mod_axis = lfo_axis_y;
+    } else {
+      wave_axis = lfo_axis_y;
+      mod_axis = lfo_axis_x;
+    }
+
+    float mod_offset = -.5f;
+    float mod_scale = 2.f;
+    if (s_vco[mod_axis].modulation == lfo_mod_amp) {
+      if (s_vco[mod_axis].depth > 0.f)
+        mod_offset += s_vco[mod_axis].depth;
+      else 
+        mod_offset -= s_vco[mod_axis].depth;
+      mod_scale = 1.f;
+    }
+       
     for (; out_p != out_e; out_p += UNIT_OUTPUT_CHANNELS) {
-      out_p[0] = float_to_output(osc_wavebank(s_phase, get_vco(s_vco[lfo_axis_x]) * (WAVE_COUNT - 1))
-        * (get_vco(s_vco[lfo_axis_y]) - s_vco[lfo_axis_y].offset + s_vco[lfo_axis_y].depth) 
+      float mod = (get_vco(s_vco[mod_axis]) + mod_offset) * mod_scale;
+      float phase = s_phase;
+      if (s_vco[mod_axis].modulation == lfo_mod_phase)
+        phase += mod + 1.f;
+      float out_f = osc_wavebank(phase, get_vco(s_vco[wave_axis]) * (WAVE_COUNT - 1));
+      if (s_vco[mod_axis].modulation < lfo_mod_phase)
+        out_f *= mod;
 #ifdef UNIT_TARGET_PLATFORM_NTS3_KAOSS
-        * amp
+      out_f *= amp;
 #endif
-      );
+      out_p[0] = float_to_output(out_f);
 #if UNIT_OUTPUT_CHANNELS == 2
       out_p[1] = out_p[0];
 #endif
@@ -272,11 +303,12 @@ __unit_callback void unit_render(const float * in, float * out, uint32_t frames)
     }
   } else {
     for (; out_p != out_e; out_p += UNIT_OUTPUT_CHANNELS) {
-      out_p[0] = float_to_output(osc_wavebank(s_phase, get_vco(s_vco[lfo_axis_x]) * (WAVE_COUNT_X - 1), get_vco(s_vco[lfo_axis_y]) * (WAVE_COUNT_Y - 1))
+//ToDo: variable grid mode
+      float out_f = osc_wavebank(s_phase, get_vco(s_vco[lfo_axis_x]) * (WAVE_COUNT_X - 1), get_vco(s_vco[lfo_axis_y]) * (WAVE_COUNT_Y - 1));
 #ifdef UNIT_TARGET_PLATFORM_NTS3_KAOSS
-        * amp
+      out_f *= amp;
 #endif
-      );
+      out_p[0] = float_to_output(out_f);
 #if UNIT_OUTPUT_CHANNELS == 2
       out_p[1] = out_p[0];
 #endif
@@ -342,11 +374,42 @@ __unit_callback void unit_set_param_value(uint8_t index, int32_t value) {
       pitch = value << 5 & 0xFF00;
       break;
 #endif
-    case param_lfo_mode_x:
-    case param_lfo_mode_y:
-      index -= param_lfo_mode_x;
-      s_vco[index].mode = value;
-      set_vco_freq(index);
+    case param_lfo_modes:
+#ifdef USER_TARGET_PLATFORM
+      value++;
+#endif
+      for (int32_t i = LFO_AXES_COUNT; i >= 0; i--) {
+        uint32_t newvalue;
+#ifdef USER_TARGET_PLATFORM
+        newvalue = value / 10;
+        s_vco[i].mode = value - newvalue * 10 - 1;
+        if (s_vco[i].mode >= LFO_MODE_COUNT)
+          s_vco[i].mode = LFO_MODE_COUNT;
+#else
+        newvalue = value / LFO_MODE_COUNT;
+        s_vco[i].mode = value - newvalue * LFO_MODE_COUNT;
+#endif
+        value = newvalue;
+      }
+      break;
+    case param_lfo_dimensions:
+      if (value <= lfo_mod_phase) {
+        s_vco[lfo_axis_y].modulation = value;
+        value = 0;
+      } else {
+        s_vco[lfo_axis_y].modulation = lfo_mod_none;
+        value -= lfo_mod_phase;
+      }
+      if (value >= WAVE_COUNT_EXP) {
+        s_vco[lfo_axis_x].modulation = value - WAVE_COUNT_EXP;
+        value = WAVE_COUNT_EXP;
+      } else {
+        s_vco[lfo_axis_x].modulation = lfo_mod_none;
+      }
+      s_vco[lfo_axis_x].dimensionexp = WAVE_COUNT_EXP - value;
+      s_vco[lfo_axis_y].dimensionexp = value;
+      s_vco[lfo_axis_x].dimension = 2 << s_vco[lfo_axis_x].dimensionexp;
+      s_vco[lfo_axis_y].dimension = 2 << s_vco[lfo_axis_y].dimensionexp;
       break;
     case param_lfo_waveform_x:
     case param_lfo_waveform_y:
@@ -377,30 +440,37 @@ __unit_callback int32_t unit_get_param_value(uint8_t index) {
 }
 
 __unit_callback const char * unit_get_param_str_value(uint8_t index, int32_t value) {
-  static const char mode[][5] = {
-    "1 ", "T ", "R ", "F ",
 #if LFO_MODE_COUNT == 8
-    "1. ", "T. ", "R. ", "F. ",
+  static const char modes[] = "1 T R F 1STSRSFS";
+#else
+  static const char modes[] = "1 T R F ";
 #endif
-    "OFF"
-  };
+  static const char dimensions[][5] = {"64 A", "64 R", "64 P", "32 2", "16 4", "8 8", "4 16", "2 32", "A 64", "R 64", "P 64"};
+  static char modename[LFO_AXES_COUNT * 2 + 1];
   static char wfnames[][4] = {"Saw", "Tri", "Sqr", "Sin", "SnH"};
-  static char string[][5] = {"WT  ", "WA  ", "WB  ", "WC  ", "WD  ", "WE  ", "WF  "};
+  static char wtnames[][5] = {"WT  ", "WA  ", "WB  ", "WC  ", "WD  ", "WE  ", "WF  "};
   static const uint8_t wfcounts[] = {WAVE_COUNT, 16, 16, 14, 13, 15, 16};
   static char *s;
-
   value = (int16_t)value;
   switch (index) {
-    case param_lfo_mode_x:
-    case param_lfo_mode_y:
-      return mode[value];
+    case param_lfo_modes:
+      for (int32_t i = LFO_AXES_COUNT; i >= 0; i--) {
+        uint32_t newvalue = value / LFO_MODE_COUNT;
+        uint32_t idx = value - newvalue * LFO_MODE_COUNT;
+        value = newvalue;
+        modename[i * 2] = modes[idx * 2];
+        modename[i * 2 + 1] = modes[idx * 2 + 1];
+      }
+      return modename;
+    case param_lfo_dimensions:
+      return dimensions[value];
     case param_lfo_waveform_x:
     case param_lfo_waveform_y:
       if (value < 5)
         return wfnames[value];
       value -= 5;
       for (uint32_t i = 0; i < sizeof(wfcounts); i++) {
-        s = string[i];
+        s = wtnames[i];
         if (value < wfcounts[i]) {
           value++;
           uint32_t j = value / 10;

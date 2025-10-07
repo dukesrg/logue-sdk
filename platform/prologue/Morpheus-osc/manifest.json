@@ -9,12 +9,12 @@
         "name" : "Morpheus",
         "num_param" : 6,
         "params" : [
-            ["LFO X mode", 0, 7, ""],
-            ["LFO Y mode", 0, 8, ""],
-            ["LFO X wave", -90, 68, "%"],
-            ["LFO Y wave", -90, 68, "%"],
-            ["LFO X depth", -100, 100, "%"],
-            ["LFO Y depth", -100, 100, "%"]
+            ["Modes", 10, 87, ""],
+            ["Dimensions", 0, 10, ""],
+            ["X Wave", -90, 68, "%"],
+            ["Y Wave", -90, 68, "%"],
+            ["X Depth", -100, 100, "%"],
+            ["Y Depth", -100, 100, "%"]
         ],
         "custom_data" : [
             ["Raw 12-bit linear PCM waveform", 64, 24768]
