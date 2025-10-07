@@ -1,9 +1,9 @@
 /*
  *  File: logue_wrap.h
  *
- *  logue SDK 1.0/2.0 wrapper
+ *  logue SDK 1.X/2.x wrapper
  *
- *  2024 (c) Oleg Burdaev
+ *  2024-2025 (c) Oleg Burdaev
  *  mailto: dukesrg@gmail.com
  */
 
@@ -30,11 +30,11 @@
 #endif
 
 #if defined(USER_API_VERSION) && defined(USER_TARGET_PLATFORM)
-  #pragma message "logue SDK 1.0 detected"
+  #pragma message "logue SDK 1.x detected"
   #define TARGET_PLATFORM USER_TARGET_PLATFORM
   #define TARGET_MODULE USER_TARGET_MODULE
 #elif defined(UNIT_API_VERSION) && defined(UNIT_TARGET_PLATFORM)
-  #pragma message "logue SDK 2.0 detected"
+  #pragma message "logue SDK 2.x detected"
   #define TARGET_PLATFORM VAL(UNBRACE(UNIT_TARGET_PLATFORM))
   #define TARGET_MODULE VAL(UNIT_TARGET_MODULE)
 #else 
@@ -48,6 +48,7 @@
 #define k_unit_target_drumlogue_val (4<<8)
 #define k_unit_target_nts1_mkii_val (5<<8)
 #define k_unit_target_nts3_kaoss_val (6<<8)
+#define k_unit_target_microkorg2_val (7<<8)
 
 #if TARGET_PLATFORM == k_unit_target_prologue_val
   #pragma message "prologue target detected"
@@ -67,6 +68,10 @@
 #elif TARGET_PLATFORM == k_unit_target_nts3_kaoss_val
   #pragma message "NTS-3 target detected"
   #define UNIT_TARGET_PLATFORM_NTS3_KAOSS
+#elif TARGET_PLATFORM == k_unit_target_microkorg2_val
+  #pragma message "microKORG2 target detected"
+  #define UNIT_TARGET_PLATFORM_MICROKORG2
+  #include "macros.h"
 #else
   #pragma GCC error "Unsupported platform"
 #endif
@@ -91,7 +96,7 @@
     #define UNIT_TARGET_MODULE_MODFX
     #ifdef UNIT_TARGET_PLATFORM_DRUMLOGUE
       #include "unit.h"
-    #elif defined(UNIT_TARGET_PLATFORM_NTS1_MKII)
+    #elif defined(UNIT_TARGET_PLATFORM_NTS1_MKII) || defined(UNIT_TARGET_PLATFORM_MICROKORG2)
       #include "unit_modfx.h"
     #else
       #include "usermodfx.h"
@@ -101,7 +106,7 @@
     #define UNIT_TARGET_MODULE_DELFX
     #ifdef UNIT_TARGET_PLATFORM_DRUMLOGUE
       #include "unit.h"
-    #elif defined(UNIT_TARGET_PLATFORM_NTS1_MKII)
+    #elif defined(UNIT_TARGET_PLATFORM_NTS1_MKII) || defined(UNIT_TARGET_PLATFORM_MICROKORG2)
       #include "unit_delfx.h"
     #else
       #include "userdel.h"
@@ -111,7 +116,7 @@
     #define UNIT_TARGET_MODULE_REVFX
     #ifdef UNIT_TARGET_PLATFORM_DRUMLOGUE
       #include "unit.h"
-    #elif defined(UNIT_TARGET_PLATFORM_NTS1_MKII)
+    #elif defined(UNIT_TARGET_PLATFORM_NTS1_MKII) || defined(UNIT_TARGET_PLATFORM_MICROKORG2)
       #include "unit_revfx.h"
     #else
       #include "userrevfx.h"
@@ -121,7 +126,7 @@
     #define UNIT_TARGET_MODULE_OSC
     #undef UNIT_OUTPUT_CHANNELS
     #define UNIT_OUTPUT_CHANNELS 1
-    #ifdef UNIT_TARGET_PLATFORM_NTS1_MKII
+    #if defined(UNIT_TARGET_PLATFORM_NTS1_MKII) || defined(UNIT_TARGET_PLATFORM_MICROKORG2)
       #include "unit_osc.h"
     #else
       #include "userosc.h"
@@ -173,6 +178,7 @@
 #undef k_unit_target_drumlogue_val
 #undef k_unit_target_nts1_mkii_val
 #undef k_unit_target_nts3_kaoss_val
+#undef k_unit_target_microkorg2_val
 
 #undef TARGET_MODULE
 #undef k_unit_module_modfx_val

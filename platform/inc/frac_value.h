@@ -1,9 +1,9 @@
 /*
  *  File: frac_value.h
  *
- *  logue SDK 2.0 fractional parameter value display workwaround
+ *  logue SDK 2.x fractional parameter value display workwaround
  *
- *  2024 (c) Oleg Burdaev
+ *  2024-2025 (c) Oleg Burdaev
  *  mailto: dukesrg@gmail.com
  */
 
@@ -19,6 +19,8 @@
   #define MAX_CHARS 4
 #elif defined(UNIT_TARGET_PLATFORM_NTS3_KAOSS)
   #define MAX_CHARS 6
+#elif defined(UNIT_TARGET_PLATFORM_MICROKORG2)
+  #define MAX_CHARS 8
 #endif
 
 fast_inline const char * unit_get_param_frac_value(uint8_t index, int32_t value) {
