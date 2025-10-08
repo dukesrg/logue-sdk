@@ -1,9 +1,9 @@
 /*
  *  File: gator.cc
  *
- *  Gator 2.0 unit
+ *  Gator 2.1 unit
  *
- *  2020-2024 (c) Oleg Burdaev
+ *  2020-2025 (c) Oleg Burdaev
  *  mailto: dukesrg@gmail.com
  */
 
@@ -31,7 +31,7 @@
 
 enum {
   param_arp_gate = 
-#ifdef UNIT_OSC_H_
+#if defined(UNIT_OSC_H_) && defined(UNIT_TARGET_PLATFORM_NTS1_MKII) 
   k_num_unit_osc_fixed_param_id
 #elif defined(UNIT_MODFX_H_)
   k_num_unit_modfx_fixed_param_id
@@ -52,7 +52,7 @@ enum {
   param_eg_decay,
   param_eg_sustain,
   param_eg_release,
-#if (defined(UNIT_TARGET_PLATFORM_DRUMLOGUE) && defined(UNIT_TARGET_MODULE_MASTERFX))
+#if defined(UNIT_TARGET_PLATFORM_DRUMLOGUE) && defined(UNIT_TARGET_MODULE_MASTERFX)
   param_master,
   param_sidechain,
   param_peak_source,
@@ -60,7 +60,7 @@ enum {
   param_num
 };  
 
-#if (defined(UNIT_TARGET_PLATFORM_DRUMLOGUE) && defined(UNIT_TARGET_MODULE_MASTERFX))
+#if defined(UNIT_TARGET_PLATFORM_DRUMLOGUE) && defined(UNIT_TARGET_MODULE_MASTERFX)
 enum {
   route_off = 0U,
   route_on,
@@ -140,7 +140,9 @@ __unit_callback int8_t unit_init(const unit_runtime_desc_t * desc) {
     return k_unit_err_geometry;
 #ifdef UNIT_OSC_H_
   runtime_context = (unit_runtime_osc_context_t *)desc->hooks.runtime_context;
+#ifdef UNIT_TARGET_PLATFORM_NTS1_MKII 
   runtime_context->notify_input_usage(k_runtime_osc_input_used);
+#endif
 #endif
   return k_unit_err_none;
 }
@@ -151,7 +153,7 @@ __unit_callback void unit_reset() {
 
 __unit_callback void unit_render(const float * in, float * out, uint32_t frames) {
   float amp = EG.out();
-#ifdef UNIT_OSC_H_
+#if defined(UNIT_OSC_H_) && defined(UNIT_TARGET_PLATFORM_NTS1_MKII)
   amp *= 1.f - q31_to_f32(runtime_context->shape_lfo);
 #elif defined(UNIT_TARGET_PLATFORM_DRUMLOGUE) && defined (UNIT_TARGET_MODULE_MASTERFX)
   float master_amp = MasterRoute[0] == route_arp ? amp : MasterRoute[0]; 
@@ -220,7 +222,7 @@ __unit_callback void unit_set_param_value(uint8_t index, int32_t value) {
     case param_eg_release:
       EG.set_release(value * .001f);
       break;
-#if (defined(UNIT_TARGET_PLATFORM_DRUMLOGUE) && defined(UNIT_TARGET_MODULE_MASTERFX))
+#if defined(UNIT_TARGET_PLATFORM_DRUMLOGUE) && defined(UNIT_TARGET_MODULE_MASTERFX)
     case param_master:
     case param_sidechain:
       MasterRoute[index - param_master] = value;    
@@ -256,7 +258,7 @@ __unit_callback const char * unit_get_param_str_value(uint8_t index, int32_t val
 //  return unit_get_param_frac_value(index, value);
   value = (int16_t)value;
   switch (index) {
-#if (defined(UNIT_TARGET_PLATFORM_DRUMLOGUE) && defined(UNIT_TARGET_MODULE_MASTERFX))
+#if defined(UNIT_TARGET_PLATFORM_DRUMLOGUE) && defined(UNIT_TARGET_MODULE_MASTERFX)
     static const char master_route[][4] = {"OFF", "ON", "ARP"};
     static const char peak_source[][7] = {"MASTER", "SIDECH", "BOTH"};
     case param_master:
@@ -275,7 +277,7 @@ __unit_callback void unit_set_tempo(uint32_t tempo) {
   ARP.set_tempo(tempo);
 }
 
-#if defined(UNIT_TARGET_PLATFORM_NTS1_MKII) || defined(UNIT_TARGET_PLATFORM_NTS3_KAOSS)
+#if defined(UNIT_TARGET_PLATFORM_NTS1_MKII) || defined(UNIT_TARGET_PLATFORM_NTS3_KAOSS) || defined(UNIT_TARGET_PLATFORM_MICROKORG2)
 __unit_callback void unit_tempo_4ppqn_tick(uint32_t counter) {
   ARP.set_tempo_4ppqn_tick(counter);
 };
@@ -284,7 +286,15 @@ __unit_callback void unit_resume() {}
 __unit_callback void unit_suspend() {}
 #endif
 
-#ifdef UNIT_OSC_H_
+#ifdef UNIT_TARGET_PLATFORM_MICROKORG22
+__unit_callback void unit_platform_exclusive(uint8_t messageId, void * data, uint32_t dataSize) {
+  (void)messageId;
+  (void)data;
+  (void)dataSize;
+}
+#endif
+
+#if defined(UNIT_OSC_H_) && defined(UNIT_TARGET_PLATFORM_NTS1_MKII)
 __unit_callback void unit_note_on(uint8_t note, uint8_t velocity) {
   (void)note;
   set_velocity(velocity);

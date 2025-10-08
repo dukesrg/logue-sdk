@@ -1,13 +1,20 @@
 /*
  *  File: gator.c
  *
- *  Gator 2.0 unit header
+ *  Gator 2.1 unit header
  *
- *  2024 (c) Oleg Burdaev
+ *  2024-2025 (c) Oleg Burdaev
  *  mailto: dukesrg@gmail.com
  */
 
 #include "logue_wrap.h"
+
+#if defined(UNIT_UNIT_TARGET_PLATFORM_MICROKORG2) && !defined(UNIT_OSC_H_)
+#include "FxDefines.h"
+#define RESERVED kMk2FxParamModeIgnoreKnobStateAndModulation
+#else
+#define RESERVED 0
+#endif
 
 const __unit_header UNIT_HEADER_TYPE unit_header = {
 #ifdef UNIT_TARGET_PLATFORM_NTS3_KAOSS
@@ -20,6 +27,9 @@ const __unit_header UNIT_HEADER_TYPE unit_header = {
     .unit_id = 0x32525447U,
     .version = 0x00020000U,
     .name = UNIT_NAME,
+#if defined(UNIT_TARGET_PLATFORM_DRUMLOGUE) || defined(UNIT_TARGET_PLATFORM_MICROKORG2)
+    .num_presets = 0,
+#endif
     .num_params = PARAM_COUNT,
     .params = {
 #ifdef UNIT_TARGET_PLATFORM_NTS1_MKII
@@ -29,14 +39,14 @@ const __unit_header UNIT_HEADER_TYPE unit_header = {
         {0, 0, 0, 0, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {""}},
 #endif 
 #endif
-        {0, 1, 0, 0, k_unit_param_type_onoff, 0, k_unit_param_frac_mode_fixed, 0, {"Gate"}},
-        {0, 50, 0, 0, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {"Pattern"}},
-        {-1023, 0, 0, 0, k_unit_param_type_db, 1, k_unit_param_frac_mode_decimal, 0, {"Thresh"}},
-        {0, 1023, 0, 0, k_unit_param_type_msec, 0, k_unit_param_frac_mode_decimal, 0, {"Time"}},
-        {0, 1023, 0, 0, k_unit_param_type_msec, 0, k_unit_param_frac_mode_decimal, 0, {"Attack"}},
-        {0, 1023, 0, 0, k_unit_param_type_msec, 0, k_unit_param_frac_mode_decimal, 0, {"Decay"}},
-        {-1023, 0, 0, 0, k_unit_param_type_db, 1, k_unit_param_frac_mode_decimal, 0, {"Sustain"}},
-        {0, 1023, 0, 0, k_unit_param_type_msec, 0, k_unit_param_frac_mode_decimal, 0, {"Release"}},
+        {0, 1, 0, 0, k_unit_param_type_onoff, 0, k_unit_param_frac_mode_fixed, RESERVED, {"Gate"}},
+        {0, 50, 0, 0, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, RESERVED, {"Pattern"}},
+        {-1023, 0, 0, 0, k_unit_param_type_db, 1, k_unit_param_frac_mode_decimal, RESERVED, {"Thresh"}},
+        {0, 1023, 0, 0, k_unit_param_type_msec, 0, k_unit_param_frac_mode_decimal, RESERVED, {"Time"}},
+        {0, 1023, 0, 0, k_unit_param_type_msec, 0, k_unit_param_frac_mode_decimal, RESERVED, {"Attack"}},
+        {0, 1023, 0, 0, k_unit_param_type_msec, 0, k_unit_param_frac_mode_decimal, RESERVED, {"Decay"}},
+        {-1023, 0, 0, 0, k_unit_param_type_db, 1, k_unit_param_frac_mode_decimal, RESERVED, {"Sustain"}},
+        {0, 1023, 0, 0, k_unit_param_type_msec, 0, k_unit_param_frac_mode_decimal, RESERVED, {"Release"}},
 #if defined(UNIT_TARGET_PLATFORM_DRUMLOGUE) && defined(UNIT_TARGET_MODULE_MASTERFX)
         {0, 2, 0, 2, k_unit_param_type_strings, 0, k_unit_param_frac_mode_fixed, 0, {"Master"}},
         {0, 2, 0, 0, k_unit_param_type_strings, 0, k_unit_param_frac_mode_fixed, 0, {"Sidech"}},
