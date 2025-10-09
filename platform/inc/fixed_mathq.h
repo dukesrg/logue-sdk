@@ -22,9 +22,15 @@
 #define q15_to_q31(q) ((q31_t)(q) << 16)
 #define q31_to_q15(q) ((q15_t)((q31_t)(q) >> 16))
 
+#ifndef q7_to_f32_c
 #define q7_to_f32_c .0078125f
+#endif
+#ifndef q7_to_f32
 #define q7_to_f32(q) ((float)(q) * q7_to_f32_c)
+#endif
+#ifndef f32_to_q7
 #define f32_to_q7(f) ((q7_t)ssat((q31_t)((float)(f) * ((1<<7)-1)),8))
+#endif
 
 #define q11_to_f32_c .00048828125f
 #define q11_to_f32(q) ((float)(q) * q11_to_f32_c)
