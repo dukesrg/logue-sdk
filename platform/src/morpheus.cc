@@ -80,7 +80,11 @@ enum {
   param_lfo_depth_y = k_user_osc_param_id6,
 #else
 #ifdef UNIT_TARGET_MODULE_OSC
+#ifdef UNIT_TARGET_PLATFORM_NTS1_MKII
   param_lfo_rate_x = k_num_unit_osc_fixed_param_id,
+#else
+  param_lfo_rate_x = 0U,
+#endif 
   param_lfo_rate_y,
   param_lfo_modes,
 #else
@@ -117,6 +121,12 @@ float amp;
 
 #if defined(UNIT_TARGET_PLATFORM_NTS1_MKII) || defined(UNIT_TARGET_PLATFORM_NTS1)
 q31_t shape_lfo_old;
+#endif
+
+#ifdef UNIT_TARGET_PLATFORM_MICROKORG2
+#define STRIDE (UNIT_OUTPUT_CHANNELS * runtime_context->outputStride)
+#else
+#define STRIDE UNIT_OUTPUT_CHANNELS
 #endif
 
 static inline __attribute__((optimize("Ofast"), always_inline))
@@ -219,8 +229,10 @@ __unit_callback int8_t unit_init(const unit_runtime_desc_t * desc) {
     return k_unit_err_api_version;
   if (desc->samplerate != 48000)
     return k_unit_err_samplerate;
-  if (desc->input_channels != UNIT_INPUT_CHANNELS || desc->output_channels != UNIT_OUTPUT_CHANNELS)
+#ifndef UNIT_TARGET_PLATFORM_MICROKORG2
+    if (desc->input_channels != UNIT_INPUT_CHANNELS || desc->output_channels != UNIT_OUTPUT_CHANNELS)
     return k_unit_err_geometry;
+#endif
 #ifdef UNIT_OSC_H_
   runtime_context = (unit_runtime_osc_context_t *)desc->hooks.runtime_context;
 #endif
@@ -239,13 +251,22 @@ void OSC_CYCLE(const user_osc_param_t * const runtime_context, int32_t * out, co
 __unit_callback void unit_render(const float * in, float * out, uint32_t frames) {
   (void) in;
 #endif
+#ifdef UNIT_TARGET_PLATFORM_MICROKORG2
+//ToDo: microKORG2 support
+  for (uint32_t voice_idx = 0; voice_idx < runtime_context->voiceLimit; voice_idx++) {
+    float w0 = osc_w0f_for_note((uint8_t)PITCH[voice_idx], PITCH[voice_idx] - (uint8_t)PITCH[voice_idx]);
+//    out[runtime_context->bufferOffset + (voice_idx >> 2) * (frames << 2) + (runtime_context->voiceOffset & 3) + (i * runtime_context->outputStride)] = sample;
+//    uint32_t offset = runtime_context->bufferOffset + (runtime_context->voiceOffset & 3) + (voice_idx >> 2) * (frames << 2);
+    unit_output_type_t * __restrict out_p = out + runtime_context->bufferOffset + (runtime_context->voiceOffset & 3) + (voice_idx >> 2) * (frames << 2);
+#else
   float w0 = osc_w0f_for_note(PITCH >> 8, PITCH & 0xFF);
   unit_output_type_t * __restrict out_p = out;
-  const unit_output_type_t * out_e = out_p + frames * UNIT_OUTPUT_CHANNELS;  
+#endif
+  const unit_output_type_t * out_e = out_p + frames * STRIDE;  
 
   for (uint32_t i = 0; i < LFO_AXES_COUNT; i++) {
     s_vco[i].offset = .5f;
-#ifdef UNIT_TARGET_MODULE_OSC
+#if defined(UNIT_TARGET_MODULE_OSC) && !defined(UNIT_TARGET_PLATFORM_MICROKORG2)
     if (s_vco[i].mode >= lfo_mode_one_shot_plus_shape_lfo) {
 #if defined(UNIT_TARGET_PLATFORM_NTS1_MKII) || defined(UNIT_TARGET_PLATFORM_NTS1)
 //ToDo: unipolar LFO for AMP mod
@@ -283,7 +304,7 @@ __unit_callback void unit_render(const float * in, float * out, uint32_t frames)
       mod_scale = 1.f;
     }
        
-    for (; out_p != out_e; out_p += UNIT_OUTPUT_CHANNELS) {
+    for (; out_p != out_e; out_p += STRIDE) {
       float mod = (get_vco(s_vco[mod_axis]) + mod_offset) * mod_scale;
       float phase = s_phase;
       if (s_vco[mod_axis].modulation == lfo_mod_phase)
@@ -302,7 +323,7 @@ __unit_callback void unit_render(const float * in, float * out, uint32_t frames)
       s_phase -= (uint32_t)s_phase;
     }
   } else {
-    for (; out_p != out_e; out_p += UNIT_OUTPUT_CHANNELS) {
+    for (; out_p != out_e; out_p += STRIDE) {
 //ToDo: variable grid mode
       float out_f = osc_wavebank(s_phase, get_vco(s_vco[lfo_axis_x]) * (WAVE_COUNT_X - 1), get_vco(s_vco[lfo_axis_y]) * (WAVE_COUNT_Y - 1));
 #ifdef UNIT_TARGET_PLATFORM_NTS3_KAOSS
@@ -316,6 +337,9 @@ __unit_callback void unit_render(const float * in, float * out, uint32_t frames)
       s_phase -= (uint32_t)s_phase;
     }
   }
+#ifdef UNIT_TARGET_PLATFORM_MICROKORG2
+  }
+#endif
 }
 
 #ifdef UNIT_TARGET_MODULE_OSC
@@ -519,4 +543,8 @@ __unit_callback void unit_touch_event(uint8_t id, uint8_t phase, uint32_t x, uin
       break;
   }
 }
+#endif
+
+#ifdef UNIT_TARGET_PLATFORM_MiCROKORG2
+__unit_callback void unit_platform_exclusive(uint8_t messageId, void * data, uint32_t dataSize) {}
 #endif
