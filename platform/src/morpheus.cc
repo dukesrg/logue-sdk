@@ -479,7 +479,11 @@ __unit_callback const char * unit_get_param_str_value(uint8_t index, int32_t val
 #else
   static const char modes[] = "1 T R F ";
 #endif
+#ifdef UNIT_TARGET_PLATFORM_MICROKORG2
+  static const char dimensions[][12] = {"64}x{Amp", "64}x{Ring", "64}x{Phase", "32}x|2", "16}x|4", "8}x|8", "4}x|16", "2}x|32", "{Amp}x|64", "{Ring}x|64", "{Phase}x|64"};
+#else
   static const char dimensions[][5] = {"64 A", "64 R", "64 P", "32 2", "16 4", "8 8", "4 16", "2 32", "A 64", "R 64", "P 64"};
+#endif
   static char modename[LFO_AXES_COUNT * 2 + 1];
   static char wfnames[][4] = {"Saw", "Tri", "Sqr", "Sin", "SnH"};
   static char wtnames[][5] = {"WT  ", "WA  ", "WB  ", "WC  ", "WD  ", "WE  ", "WF  "};

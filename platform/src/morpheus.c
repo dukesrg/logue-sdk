@@ -20,13 +20,16 @@ const __unit_header UNIT_HEADER_TYPE unit_header = {
     .unit_id = 0x4850524DU,
     .version = 0x00020000U,
     .name = UNIT_NAME,
+#ifdef UNIT_TARGET_PLATFORM_MICROKORG2
+    .num_presets = 0,
+#endif
     .num_params = PARAM_COUNT,
     .params = {
-#ifdef UNIT_TARGET_MODULE_OSC
+#ifndef UNIT_TARGET_PLATFORM_NTS3_KAOSS
+#ifdef UNIT_TARGET_PLATFORM_NTS1_MKII
         {0, 1023, 0, 0, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {"X Value"}},
         {0, 1023, 0, 0, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {"Y Value"}},
 #endif
-#ifdef UNIT_TARGET_MODULE_OSC
         {0, 1023, 0, 0, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {"X Value"}},
         {0, 1023, 0, 0, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {"Y Value"}},
 #endif
@@ -36,8 +39,15 @@ const __unit_header UNIT_HEADER_TYPE unit_header = {
         {0, LFO_WAVEFORM_COUNT - 1, 0, 0, k_unit_param_type_strings, 0, k_unit_param_frac_mode_fixed, 0, {"Y Wave"}},
         {-100, 100, 0, 0, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {"X Depth"}},
         {-100, 100, 0, 0, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {"Y Depth"}},
-#ifndef UNIT_TARGET_MODULE_OSC
+#ifdef UNIT_TARGET_PLATFORM_NTS3_KAOSS
         {0, 1023, 0, 480, k_unit_param_type_midi_note, 0, k_unit_param_frac_mode_fixed, 0, {"Pitch"}},
+        {0, 0, 0, 0, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {""}},
+#endif
+#ifdef UNIT_TARGET_PLATFORM_MIcROKORG2
+        {0, 0, 0, 0, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {""}},
+        {0, 0, 0, 0, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {""}},
+        {0, 0, 0, 0, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {""}},
+        {0, 0, 0, 0, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {""}},
         {0, 0, 0, 0, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {""}},
 #endif
     }
