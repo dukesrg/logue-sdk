@@ -258,6 +258,10 @@ __unit_callback void unit_render(const float * in, float * out, uint32_t frames)
 //    out[runtime_context->bufferOffset + (voice_idx >> 2) * (frames << 2) + (runtime_context->voiceOffset & 3) + (i * runtime_context->outputStride)] = sample;
 //    uint32_t offset = runtime_context->bufferOffset + (runtime_context->voiceOffset & 3) + (voice_idx >> 2) * (frames << 2);
     unit_output_type_t * __restrict out_p = out + runtime_context->bufferOffset + (runtime_context->voiceOffset & 3) + (voice_idx >> 2) * (frames << 2);
+//ToDo: TBC microKORG2 trigger field behaviour, bit order, voiceOffset and voiceLimit dependency
+    if (runtime_context->trigger & (1 << voice_idx)) {
+      note_on();
+    }
 #else
   float w0 = osc_w0f_for_note(PITCH >> 8, PITCH & 0xFF);
   unit_output_type_t * __restrict out_p = out;
@@ -343,6 +347,7 @@ __unit_callback void unit_render(const float * in, float * out, uint32_t frames)
 }
 
 #ifdef UNIT_TARGET_MODULE_OSC
+#ifndef UNIT_TARGET_PLATFORM_MICROKORG2
 #ifndef UNIT_OSC_H_
 void OSC_NOTEON(__attribute__((unused)) const user_osc_param_t * const params) {
 #else
@@ -361,9 +366,14 @@ __unit_callback void unit_note_off(uint8_t note) {
   (void)note;
 #endif
 }
+#endif
 
-#ifdef UNIT_OSC_H_
+#ifdef UNIT_TARGET_PLATFORM_NTS1_MKII
 __unit_callback void unit_all_note_off() {}
+
+__unit_callback void unit_pitch_bend(uint16_t pitch_bend) {
+  (void)pitch_bend;
+}
 
 __unit_callback void unit_channel_pressure(uint8_t pressure) {
   (void)pressure;
