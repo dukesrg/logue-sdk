@@ -40,8 +40,8 @@ const __unit_header UNIT_HEADER_TYPE unit_header = {
         {-100, 100, 0, 0, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {"X Depth"}},
         {-100, 100, 0, 0, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {"Y Depth"}},
 #ifdef UNIT_TARGET_PLATFORM_NTS3_KAOSS
+        {-512, 512, 0, 0, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {"BPM Sync"}},
         {0, 1023, 0, 480, k_unit_param_type_midi_note, 0, k_unit_param_frac_mode_fixed, 0, {"Pitch"}},
-        {0, 0, 0, 0, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {""}},
 #endif
 #ifdef UNIT_TARGET_PLATFORM_MIcROKORG2
         {0, 0, 0, 0, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {""}},

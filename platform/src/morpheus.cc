@@ -95,7 +95,11 @@ enum {
   param_lfo_waveform_y,
   param_lfo_depth_x,
   param_lfo_depth_y,
-#ifndef UNIT_TARGET_MODULE_OSC
+#ifdef UNIT_TARGET_PLATFORM_NTS1_MKII
+//  param_bpm_sync_x,
+//  param_bpm_sync_y,
+#elif defined(UNIT_TARGET_PLATFORM_NTS3_KAOSS)
+  param_bpm_sync,
   param_pitch,
 #endif
 #endif
@@ -124,9 +128,8 @@ q31_t shape_lfo_old;
 #endif
 
 #ifdef UNIT_TARGET_PLATFORM_MICROKORG2
-#define STRIDE (UNIT_OUTPUT_CHANNELS * runtime_context->outputStride)
-#else
-#define STRIDE UNIT_OUTPUT_CHANNELS
+#define MOD_PATCHES_COUNT 2
+static float32x4x2_t vModPatches[MOD_PATCHES_COUNT];
 #endif
 
 static inline __attribute__((optimize("Ofast"), always_inline))
@@ -136,7 +139,12 @@ void set_vco_freq(uint32_t index) {
 
 static inline __attribute__((optimize("Ofast"), always_inline))
 void set_vco_rate(uint32_t index, uint32_t value) {
+#ifdef UNIT_TARGET_PLATFORM_MICROKORG2
+//ToDo: apply microKORG2 path modulation to X/Y Value
+  s_vco[index].shape = param_val_to_f32(value) + vModPatches[index].val[0][0];
+#else
   s_vco[index].shape = param_val_to_f32(value);
+#endif
   s_vco[index].freq = (fasterdbampf(s_vco[index].shape * LFO_RATE_LOG_BIAS) - 1.f) * LFO_MAX_RATE;
   set_vco_freq(index);
 }
@@ -266,7 +274,7 @@ __unit_callback void unit_render(const float * in, float * out, uint32_t frames)
   float w0 = osc_w0f_for_note(PITCH >> 8, PITCH & 0xFF);
   unit_output_type_t * __restrict out_p = out;
 #endif
-  const unit_output_type_t * out_e = out_p + frames * STRIDE;  
+  const unit_output_type_t * out_e = out_p + frames * UNIT_OUTPUT_CHANNELS;  
 
   for (uint32_t i = 0; i < LFO_AXES_COUNT; i++) {
     s_vco[i].offset = .5f;
@@ -308,7 +316,7 @@ __unit_callback void unit_render(const float * in, float * out, uint32_t frames)
       mod_scale = 1.f;
     }
        
-    for (; out_p != out_e; out_p += STRIDE) {
+    for (; out_p != out_e; out_p += UNIT_OUTPUT_CHANNELS) {
       float mod = (get_vco(s_vco[mod_axis]) + mod_offset) * mod_scale;
       float phase = s_phase;
       if (s_vco[mod_axis].modulation == lfo_mod_phase)
@@ -327,7 +335,7 @@ __unit_callback void unit_render(const float * in, float * out, uint32_t frames)
       s_phase -= (uint32_t)s_phase;
     }
   } else {
-    for (; out_p != out_e; out_p += STRIDE) {
+    for (; out_p != out_e; out_p += UNIT_OUTPUT_CHANNELS) {
 //ToDo: variable grid mode
       float out_f = osc_wavebank(s_phase, get_vco(s_vco[lfo_axis_x]) * (WAVE_COUNT_X - 1), get_vco(s_vco[lfo_axis_y]) * (WAVE_COUNT_Y - 1));
 #ifdef UNIT_TARGET_PLATFORM_NTS3_KAOSS
@@ -404,6 +412,9 @@ __unit_callback void unit_set_param_value(uint8_t index, int32_t value) {
       set_vco_rate(index, value);
       break;
 #else
+    case param_bpm_sync:
+//ToDo: BPM sync LFO for NTS-3
+      break;
     case param_pitch:
       pitch = value << 5 & 0xFF00;
       break;
@@ -480,6 +491,7 @@ __unit_callback const char * unit_get_param_str_value(uint8_t index, int32_t val
   static const char modes[] = "1 T R F ";
 #endif
 #ifdef UNIT_TARGET_PLATFORM_MICROKORG2
+//ToDo: TBC microKORG2 param strings constraints
   static const char dimensions[][12] = {"64}x{Amp", "64}x{Ring", "64}x{Phase", "32}x|2", "16}x|4", "8}x|8", "4}x|16", "2}x|32", "{Amp}x|64", "{Ring}x|64", "{Phase}x|64"};
 #else
   static const char dimensions[][5] = {"64 A", "64 R", "64 P", "32 2", "16 4", "8 8", "4 16", "2 32", "A 64", "R 64", "P 64"};
@@ -524,6 +536,7 @@ __unit_callback const char * unit_get_param_str_value(uint8_t index, int32_t val
 }
 
 __unit_callback void unit_set_tempo(uint32_t tempo) {
+//ToDo: BPM sync LFO
   (void)tempo;  
 }
 
@@ -559,6 +572,35 @@ __unit_callback void unit_touch_event(uint8_t id, uint8_t phase, uint32_t x, uin
 }
 #endif
 
-#ifdef UNIT_TARGET_PLATFORM_MiCROKORG2
-__unit_callback void unit_platform_exclusive(uint8_t messageId, void * data, uint32_t dataSize) {}
+#ifdef UNIT_TARGET_PLATFORM_MICROKORG2
+__unit_callback void unit_platform_exclusive(uint8_t messageId, void * data, uint32_t dataSize) {
+  (void)dataSize;
+  switch (messageId) {
+    case kMk2PlatformExclusiveModData: {
+      mk2_mod_data_t *mod_data = (mk2_mod_data_t *)data;
+      for (uint32_t i = 0; i < MOD_PATCHES_COUNT; i++) {
+//__asm__ volatile ( "nop\nnop\nnop\nnop\n");
+        for (uint32_t j = 0; j < runtime_context->voiceLimit; j++)
+          ((float *)&vModPatches[i])[j] = mod_data->data[runtime_context->voiceLimit * i + j];
+        vModPatches[i].val[0] *= mod_data->depth[0][i];
+        vModPatches[i].val[1] *= mod_data->depth[0][i];
+//__asm__ volatile ( "nop\nnop\nnop\nnop\n");
+      }
+      break;
+    }
+    case kMk2PlatformExclusiveModDestName: {
+      mk2_mod_dest_name_t *mod_dest = (mk2_mod_dest_name_t *)data;
+      if (mod_dest->index < MOD_PATCHES_COUNT) {
+        for (uint32_t i = 0; i < UNIT_PARAM_NAME_LEN; i++)
+          mod_dest->name[i] = unit_header.params[mod_dest->index].name[i];
+      }
+      break;
+    }  
+/*ToDo: TBC message purpose and data format
+    case kMk2PlatformExclusiveUserModSource:
+      mk2_user_mod_source_t *user_mod_source = (mk2_user_mod_source_t *)data;
+      break;
+*/
+  }
+}
 #endif

@@ -18,7 +18,7 @@
 typedef struct mk2_mod_data {
 #if UNIT_TIMBRE_COUNT == 2
   float depth[UNIT_TIMBRE_COUNT][kNumModDest];
-  float32x4x2_t data[kMk2MaxVoices * kNumModDest];
+  float data[kNumModDest * kMk2MaxVoices];
 #else
 //ToDo: TBC buffer geometry dependency from timbre count and voiceLimit
   #pragma GCC error "Unsupported timbre count"
