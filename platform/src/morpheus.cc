@@ -111,7 +111,7 @@ static int32_t Params[PARAM_COUNT];
 #endif
 
 #ifdef UNIT_OSC_H_
-unit_runtime_osc_context_t *runtime_context;
+const unit_runtime_desc_t *runtime_desc;
 #else
 uint16_t pitch = 0x3C00;
 float amp;
@@ -242,7 +242,7 @@ __unit_callback int8_t unit_init(const unit_runtime_desc_t * desc) {
     return k_unit_err_geometry;
 #endif
 #ifdef UNIT_OSC_H_
-  runtime_context = (unit_runtime_osc_context_t *)desc->hooks.runtime_context;
+  runtime_desc = desc;
 #endif
 #endif
 #if LFO_WAVEFORM_COUNT == 159
@@ -258,6 +258,7 @@ void OSC_CYCLE(const user_osc_param_t * const runtime_context, int32_t * out, co
 #else
 __unit_callback void unit_render(const float * in, float * out, uint32_t frames) {
   (void) in;
+  const unit_runtime_osc_context_t *runtime_context = (unit_runtime_osc_context_t *)runtime_desc->hooks.runtime_context;
 #endif
 #ifdef UNIT_TARGET_PLATFORM_MICROKORG2
 //ToDo: microKORG2 support
@@ -575,6 +576,7 @@ __unit_callback void unit_touch_event(uint8_t id, uint8_t phase, uint32_t x, uin
 #ifdef UNIT_TARGET_PLATFORM_MICROKORG2
 __unit_callback void unit_platform_exclusive(uint8_t messageId, void * data, uint32_t dataSize) {
   (void)dataSize;
+  const unit_runtime_osc_context_t *runtime_context = (unit_runtime_osc_context_t *)runtime_desc->hooks.runtime_context;
   switch (messageId) {
     case kMk2PlatformExclusiveModData: {
       mk2_mod_data_t *mod_data = (mk2_mod_data_t *)data;
