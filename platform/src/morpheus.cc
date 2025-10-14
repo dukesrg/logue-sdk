@@ -57,7 +57,10 @@ typedef struct {
   uint32_t dimension;
   uint32_t modulation;
   float depth;
-  float freq;
+#ifdef UNIT_TARGET_PLATFORM
+  float bpmfreq;
+#endif
+  float freq;  
   float shape;
   float snh;
   float offset;
@@ -80,11 +83,7 @@ enum {
   param_lfo_depth_y = k_user_osc_param_id6,
 #else
 #ifdef UNIT_TARGET_MODULE_OSC
-#ifdef UNIT_TARGET_PLATFORM_NTS1_MKII
-  param_lfo_rate_x = k_num_unit_osc_fixed_param_id,
-#else
   param_lfo_rate_x = 0U,
-#endif 
   param_lfo_rate_y,
   param_lfo_modes,
 #else
@@ -95,12 +94,12 @@ enum {
   param_lfo_waveform_y,
   param_lfo_depth_x,
   param_lfo_depth_y,
-#ifdef UNIT_TARGET_PLATFORM_NTS1_MKII
-//  param_bpm_sync_x,
-//  param_bpm_sync_y,
-#elif defined(UNIT_TARGET_PLATFORM_NTS3_KAOSS)
-  param_bpm_sync,
+  param_lfo_bpm_sync_x,
+#ifdef UNIT_TARGET_PLATFORM_NTS3_KAOSS
+  param_lfo_bpm_sync_y = param_lfo_bpm_sync_x,
   param_pitch,
+#else
+  param_lfo_bpm_sync_y,
 #endif
 #endif
   param_num
@@ -108,6 +107,7 @@ enum {
 
 #ifdef UNIT_TARGET_PLATFORM
 static int32_t Params[PARAM_COUNT];
+static float s_bpmfreq;
 #endif
 
 #ifdef UNIT_OSC_H_
@@ -134,20 +134,32 @@ static float32x4x2_t vModPatches[MOD_PATCHES_COUNT];
 
 static inline __attribute__((optimize("Ofast"), always_inline))
 void set_vco_freq(uint32_t index) {
-    s_vco[index].lfo.setF0(s_vco[index].freq, k_samplerate_recipf);
+    s_vco[index].lfo.setF0(
+#ifdef UNIT_TARGET_PLATFORM
+      s_vco[index].bpmfreq > 0.f ? s_vco[index].bpmfreq :
+#endif
+    s_vco[index].freq, k_samplerate_recipf);
 }
 
 static inline __attribute__((optimize("Ofast"), always_inline))
 void set_vco_rate(uint32_t index, uint32_t value) {
 #ifdef UNIT_TARGET_PLATFORM_MICROKORG2
 //ToDo: apply microKORG2 path modulation to X/Y Value
-  s_vco[index].shape = param_val_to_f32(value) + vModPatches[index].val[0][0];
+  s_vco[index].shape = param_val_to_f32(value) + vModPatches[index].val[0][index];
 #else
   s_vco[index].shape = param_val_to_f32(value);
 #endif
   s_vco[index].freq = (fasterdbampf(s_vco[index].shape * LFO_RATE_LOG_BIAS) - 1.f) * LFO_MAX_RATE;
   set_vco_freq(index);
 }
+
+#ifdef UNIT_TARGET_PLATFORM
+static inline __attribute__((optimize("Ofast"), always_inline))
+void set_vco_bpm(uint32_t index, uint32_t value) {
+  s_vco[index].bpmfreq = s_bpmfreq * value;
+  set_vco_freq(index);
+}
+#endif
 
 static inline __attribute__((optimize("Ofast"), always_inline))
 float get_vco(vco_t &vco) {
@@ -258,7 +270,9 @@ void OSC_CYCLE(const user_osc_param_t * const runtime_context, int32_t * out, co
 #else
 __unit_callback void unit_render(const float * in, float * out, uint32_t frames) {
   (void) in;
+#ifdef UNIT_TARGET_MODULE_OSC
   const unit_runtime_osc_context_t *runtime_context = (unit_runtime_osc_context_t *)runtime_desc->hooks.runtime_context;
+#endif
 #endif
 #ifdef UNIT_TARGET_PLATFORM_MICROKORG2
 //ToDo: microKORG2 support
@@ -399,10 +413,6 @@ __unit_callback void unit_aftertouch(uint8_t note, uint8_t aftertouch) {
 void OSC_PARAM(uint16_t index, uint16_t value) {
 #else
 __unit_callback void unit_set_param_value(uint8_t index, int32_t value) {
-#ifdef UNIT_TARGET_PLATFORM_NTS1_MKII
-  if (index < k_num_unit_osc_fixed_param_id)
-    index += k_num_unit_osc_fixed_param_id;
-#endif
   Params[index] = value;
 #endif
   switch (index) {
@@ -412,9 +422,19 @@ __unit_callback void unit_set_param_value(uint8_t index, int32_t value) {
       index -= param_lfo_rate_x;
       set_vco_rate(index, value);
       break;
+#ifdef UNIT_OSC_H_
+    case param_lfo_bpm_sync_x:
+    case param_lfo_bpm_sync_y:
+      set_vco_bpm(index - param_lfo_bpm_sync_x, value);
+      break;
+#endif
 #else
-    case param_bpm_sync:
-//ToDo: BPM sync LFO for NTS-3
+    case param_lfo_bpm_sync_x:
+      if (value < 0) {
+        value -= value;
+        index++;
+      }
+      set_vco_bpm(index - param_lfo_bpm_sync_x, value);
       break;
     case param_pitch:
       pitch = value << 5 & 0xFF00;
@@ -478,10 +498,6 @@ __unit_callback void unit_set_param_value(uint8_t index, int32_t value) {
 
 #ifdef UNIT_TARGET_PLATFORM
 __unit_callback int32_t unit_get_param_value(uint8_t index) {
-#ifdef UNIT_TARGET_PLATFORM_NTS1_MKII
-  if (index < k_num_unit_osc_fixed_param_id)
-    index += k_num_unit_osc_fixed_param_id;
-#endif
   return Params[index];
 }
 
@@ -504,6 +520,10 @@ __unit_callback const char * unit_get_param_str_value(uint8_t index, int32_t val
   static char *s;
   value = (int16_t)value;
   switch (index) {
+    case param_lfo_rate_x:
+    case param_lfo_rate_y:
+//ToDo: Rate / position string representation
+      break;
     case param_lfo_modes:
       for (int32_t i = LFO_AXES_COUNT; i >= 0; i--) {
         uint32_t newvalue = value / LFO_MODE_COUNT;
@@ -537,13 +557,16 @@ __unit_callback const char * unit_get_param_str_value(uint8_t index, int32_t val
 }
 
 __unit_callback void unit_set_tempo(uint32_t tempo) {
-//ToDo: BPM sync LFO
-  (void)tempo;  
+  s_bpmfreq = tempo == 0 ? 0.f : (3932160.f / tempo); // 60 * (2<<16) / tempo
+  set_vco_bpm(lfo_axis_x, Params[param_lfo_bpm_sync_x]);
+  set_vco_bpm(lfo_axis_y, Params[param_lfo_bpm_sync_y]);
 }
 
+#ifndef UNIT_TARGET_PLATFORM_MICROKORG2
 __unit_callback void unit_tempo_4ppqn_tick(uint32_t counter) {
   (void)counter;
 }
+#endif
 
 __unit_callback void unit_reset() {}
 
@@ -582,6 +605,7 @@ __unit_callback void unit_platform_exclusive(uint8_t messageId, void * data, uin
       mk2_mod_data_t *mod_data = (mk2_mod_data_t *)data;
       for (uint32_t i = 0; i < MOD_PATCHES_COUNT; i++) {
 //__asm__ volatile ( "nop\nnop\nnop\nnop\n");
+//ToDo: TBC if voiceOffset must be respected
         for (uint32_t j = 0; j < runtime_context->voiceLimit; j++)
           ((float *)&vModPatches[i])[j] = mod_data->data[runtime_context->voiceLimit * i + j];
         vModPatches[i].val[0] *= mod_data->depth[0][i];

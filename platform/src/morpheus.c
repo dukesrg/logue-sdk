@@ -10,7 +10,7 @@
 #include "logue_wrap.h"
 
 const __unit_header UNIT_HEADER_TYPE unit_header = {
-#ifdef UNIT_TARGET_PLATFORM_NTS3_KAOSS
+#ifdef UNIT_TARGET_MODULE_GENERICFX
     .common = {
 #endif
     .header_size = sizeof(UNIT_HEADER_TYPE),
@@ -25,11 +25,7 @@ const __unit_header UNIT_HEADER_TYPE unit_header = {
 #endif
     .num_params = PARAM_COUNT,
     .params = {
-#ifndef UNIT_TARGET_PLATFORM_NTS3_KAOSS
-#ifdef UNIT_TARGET_PLATFORM_NTS1_MKII
-        {0, 1023, 0, 0, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {"X Value"}},
-        {0, 1023, 0, 0, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {"Y Value"}},
-#endif
+#ifdef UNIT_TARGET_MODULE_OSC
         {0, 1023, 0, 0, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {"X Value"}},
         {0, 1023, 0, 0, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {"Y Value"}},
 #endif
@@ -39,19 +35,20 @@ const __unit_header UNIT_HEADER_TYPE unit_header = {
         {0, LFO_WAVEFORM_COUNT - 1, 0, 0, k_unit_param_type_strings, 0, k_unit_param_frac_mode_fixed, 0, {"Y Wave"}},
         {-100, 100, 0, 0, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {"X Depth"}},
         {-100, 100, 0, 0, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {"Y Depth"}},
-#ifdef UNIT_TARGET_PLATFORM_NTS3_KAOSS
+#ifdef UNIT_TARGET_MODULE_OSC
+        {0, 512, 0, 0, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {"XBPMSync"}},
+        {0, 512, 0, 0, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {"YBPMSync"}},
+#else
         {-512, 512, 0, 0, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {"BPM Sync"}},
         {0, 1023, 0, 480, k_unit_param_type_midi_note, 0, k_unit_param_frac_mode_fixed, 0, {"Pitch"}},
 #endif
-#ifdef UNIT_TARGET_PLATFORM_MIcROKORG2
-        {0, 0, 0, 0, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {""}},
-        {0, 0, 0, 0, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {""}},
+#ifdef UNIT_TARGET_PLATFORM_MICROKORG2
         {0, 0, 0, 0, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {""}},
         {0, 0, 0, 0, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {""}},
         {0, 0, 0, 0, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {""}},
 #endif
     }
-#ifdef UNIT_TARGET_PLATFORM_NTS3_KAOSS
+#ifdef UNIT_TARGET_MODULE_GENERICFX
     },
     .default_mappings = {
         {k_genericfx_param_assign_none, k_genericfx_curve_linear, k_genericfx_curve_unipolar, 0, LFO_MODE_COUNT * LFO_MODE_COUNT - 1, 0},
