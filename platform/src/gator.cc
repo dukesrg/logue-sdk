@@ -277,21 +277,16 @@ __unit_callback void unit_set_tempo(uint32_t tempo) {
   ARP.set_tempo(tempo);
 }
 
-#if defined(UNIT_TARGET_PLATFORM_NTS1_MKII) || defined(UNIT_TARGET_PLATFORM_NTS3_KAOSS) || defined(UNIT_TARGET_PLATFORM_MICROKORG2)
+#if defined(UNIT_TARGET_PLATFORM_NTS1_MKII) || defined(UNIT_TARGET_PLATFORM_NTS3_KAOSS)
 __unit_callback void unit_tempo_4ppqn_tick(uint32_t counter) {
   ARP.set_tempo_4ppqn_tick(counter);
 };
+#endif
+
+#if defined(UNIT_TARGET_PLATFORM_NTS1_MKII) || defined(UNIT_TARGET_PLATFORM_NTS3_KAOSS) || defined(UNIT_TARGET_PLATFORM_MICROKORG2)
 __unit_callback void unit_resume() {}
 
 __unit_callback void unit_suspend() {}
-#endif
-
-#ifdef UNIT_TARGET_PLATFORM_MICROKORG22
-__unit_callback void unit_platform_exclusive(uint8_t messageId, void * data, uint32_t dataSize) {
-  (void)messageId;
-  (void)data;
-  (void)dataSize;
-}
 #endif
 
 #if defined(UNIT_OSC_H_) && defined(UNIT_TARGET_PLATFORM_NTS1_MKII)
@@ -336,5 +331,13 @@ __unit_callback void unit_touch_event(uint8_t id, uint8_t phase, uint32_t x, uin
     default:
       break;
   }
+}
+#endif
+
+#ifdef UNIT_TARGET_PLATFORM_MICROKORG22
+__unit_callback void unit_platform_exclusive(uint8_t messageId, void * data, uint32_t dataSize) {
+  (void)messageId;
+  (void)data;
+  (void)dataSize;
 }
 #endif
