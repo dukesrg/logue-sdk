@@ -21,7 +21,7 @@ const __unit_header unit_header_t unit_header = {
     .version = 0x00020000U,                                // This unit's version: major.minor.patch (major<<16 minor<<8 patch).
     .name = "waves",                                       // Name for this unit, will be displayed on device
     .num_presets = 0,                                      // Number of internal presets this unit has
-    .num_params = 8,                                       // Number of parameters for this unit, max 24
+    .num_params = 8,                                       // Number of parameters for this unit, max 13
     .params = {
     // Format:
     // min, max, center, default, type, frac. bits, frac. mode, <reserved>, name
@@ -38,7 +38,7 @@ const __unit_header unit_header_t unit_header = {
     {0, WAVE_B_CNT-1,   0, 0, k_unit_param_type_enum,    0, 0, 0, {"WAVE B"}},
     {0, SUB_WAVE_CNT-1, 0, 0, k_unit_param_type_enum,    0, 0, 0, {"SUB WAVE"}},
     {0, 1000,           0, 0, k_unit_param_type_percent, 1, 1, 0, {"RING MIX"}},
-    {0, 1000,           0, 0, k_unit_param_type_percent, 1, 1, 0, {"BIT CRUSH"}},
+    {0, 1000,           0, 0, k_unit_param_type_percent, 1, 1, 0, {"BIT CRSH"}},
     {0, 1000,           0, 250, k_unit_param_type_percent, 1, 1, 0, {"DRIFT"}},
 
     // page 3

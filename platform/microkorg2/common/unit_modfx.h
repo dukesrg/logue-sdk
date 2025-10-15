@@ -61,7 +61,7 @@ extern "C" {
   };
 
 #define UNIT_MODFX_MAX_PARAM_COUNT (8)
-  
+
 #ifdef __cplusplus
 } // extern "C"
 #endif

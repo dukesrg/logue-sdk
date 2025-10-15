@@ -114,7 +114,7 @@ Done
  1. `run_cmd.sh`のパスを指定し目的のプロジェクトをビルドします (下記は`microkorg2/dummy-modfx`をビルドする例).
 
 ```
- $ ./run_cmd.sh build nts-1_mkii/waves
+ $ ./run_cmd.sh build microkorg2/waves
 >> Initializing microkorg2 development environment.
 Note: run 'env -r' to reset the environment
 >> Building /workspace/microkorg2/dummy-modfx
@@ -247,7 +247,7 @@ Done
  * `.dev_id` : 開発者を識別するための固有のIDです. ローエンディアンの32ビット符号なし整数で表現されます. 詳細は[開発者ID](#開発者id)のセクションをご参照ください.
  * `.unit_id` : ユニットを識別するための固有のIDです. ローエンディアンの32ビット符号なし整数で表現されます. 同一の`dev_id`の範囲内では, ユニットごとに異なる固有の`unit_id`を設定してください.
  * `.version` : ユニットのバージョンをローエンディアンの32ビット符号なし整数で記述することができます. 上位16ビットにメジャー・バージョン番号を, 下位２バイトにそれぞれマイナー・バージョン番号とパッチ番号を設定できます (例: v1.2.3 -> 0x00010203U).
- * `.name` : ロード時にデバイスに表示されるユニットの名前を指定します. ASCIIのNULL終端配列で最大18文字です. 次の文字を使うことができます: "` ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._`".
+ * `.name` : ロード時にデバイスに表示されるユニットの名前を指定します. ASCIIのNULL終端配列で最大8文字です. 次の文字を使うことができます: "` ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._`".
  * `.num_params` : ユニットの公開パラメーターの数です. この値はモジュールごとに異なり, common headerの UNIT\_XXX\_MAX\_PARAM\_COUNT に正確な値があります(XXXがターゲットとなるモジュールを示します).
  * `.params` : パラメーター記述子の配列です. 詳細は[パラメーター記述子](#パラメーター記述子)のセクションをご参照ください.
  
@@ -352,9 +352,8 @@ Reverb fxのREVERBページとEXTRAページでは最大8つのパラメータ�
  * `__unit_callback void unit_render(const float * in, float * out, uint32_t frames)` : オーディオ・レンダリングのコールバック関数です. インプット/アウトプット・バッファーの情報は`unit_init(..)`関数の引数`unit_runtime_desc_t`で提供されます.
  * `__unit_callback int32_t unit_get_param_value(uint8_t index)` : 引数で指定されたインデックスのパラメーターの現在の値を取得するために呼び出されます.
  * `__unit_callback const char * unit_get_param_str_value(uint8_t index, int32_t value)` : `k_unit_param_type_strings`型のパラメーターのカスタム文字列を取得するために呼ばれる関数です. 戻り値はNULL終端の7ビットASCII文字列を指すポインターにしてください. このポインターは `unit_get_param_str_value(..)`が再び呼び出されるまでキャッシュ/再利用されることはありません.
- * `__unit_callback void unit_set_param_value(uint8_t index, int32_t value)` : 引数で指定されたインデックスのパラメーターの現在の値を設定するために呼ばれる関数です. NTS-1 digital kit mkIIでは値は16ビット整数として保存されますが, 将来的なAPIの互換性を担保するため32ビット整数として値が渡されていることに注意してください. 安全性を高めるため, ヘッダーで宣言したmin/maxの値に従って, 値のチェックと丸め込みを実施してください.
+ * `__unit_callback void unit_set_param_value(uint8_t index, int32_t value)` : 引数で指定されたインデックスのパラメーターの現在の値を設定するために呼ばれる関数です. microKORG2では値は16ビット整数として保存されますが, 将来的なAPIの互換性を担保するため32ビット整数として値が渡されていることに注意してください. 安全性を高めるため, ヘッダーで宣言したmin/maxの値に従って, 値のチェックと丸め込みを実施してください.
  * `__unit_callback void unit_set_tempo(uint32_t tempo)` : テンポが変更された時に呼び出される関数です. テンポは固定小数点でフォーマットされ, 上位16ビットが整数部分, 下位16ビット（ローエンディアン）が小数部分になります. この関数は外部デバイスとテンポ同期しているときに頻繁に呼び出される可能性があるため, テンポ変更を処理する際にはCPU負荷を可能な限り低く保つように注意してください.
- * `__unit_callback void unit_tempo_4ppqn_tick_func(uint32_t counter)` : 初期化後, 4PPQNインターバル（16分音符）のクロック・イベントをユニットに通知するためにいつでも呼び出すことができる関数です.
  
 ### microKORG2で使用可能な関数（オプション）
  * `__unit_callback void unit_platform_exclusive(uint8_t messageId, void * data, uint32_t dataSize)` : オシレーター・ユニットのバーチャル・パッチ・モジュレーションを含むmicroKORG2特有の関数です.
@@ -377,7 +376,7 @@ Reverb fxのREVERBページとEXTRAページでは最大8つのパラメータ�
  
  * `target` : 現在のプラットフォームとモジュールを記述します. `k_unit_target_nts1_mkii_osc`, `k_unit_target_nts1_mkii_modfx`, `k_unit_target_nts1_mkii_delfx`, `k_unit_target_nts1_mkii_revfx`のいずれかに設定してください. マクロ`UNIT_TARGET_PLATFORM_IS_COMPAT(target)`を使うと現在のユニットと実行環境の互換性をチェックできます.
  * `api` : 現在使用されているAPIのバージョンを記述します. バージョンは上位16ビットにメジャー番号, 下位2バイトにそれぞれマイナー番号とパッチ番号が格納されます (例: v1.2.3 -> 0x00010203U). マクロ`UNIT_API_IS_COMPAT(api)`を使うと現在のユニットとランタイム環境APIの互換性をチェックできます.
- * `samplerate` : オーディオ処理に適用するサンプルレートを指定します. NTS-1 digital kit mkIIでは常に48000であるべきですが, 将来的な互換性のためユニットによってチェックすることを推奨します.  ユニットは`unit_init(..)`関数から `k_unit_err_samplerate*`を返すことで, 不都合なサンプルレートを拒否することができます.
+ * `samplerate` : オーディオ処理に適用するサンプルレートを指定します. microKORG2では常に48000であるべきですが, 将来的な互換性のためユニットによってチェックすることを推奨します.  ユニットは`unit_init(..)`関数から `k_unit_err_samplerate*`を返すことで, 不都合なサンプルレートを拒否することができます.
  * `frames_per_buffer` : `unit_render(..)`関数での, オーディオ処理バッファの最大フレーム数を記述します. 一般的には関数の`frames`引数と等しくなければいけませんが, それより小さい値のサポートも検討してください.
  * `input_channels` : `unit_render(..)`関数の入力バッファにある, 1フレーム当たりのオーディオのチャンネル数(サンプル数)を記述します.
  * `output_channels` : `unit_render(..)`関数の出力バッファにある, 1フレーム当たりのオーディオのチャンネル数(サンプル数)を記述します.

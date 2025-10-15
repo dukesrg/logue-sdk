@@ -105,7 +105,7 @@ class ModFx {
     if (!UNIT_API_IS_COMPAT(desc->api))
       return k_unit_err_api_version;
     
-    // Check compatibility of samplerate with unit, for NTS-1 MKII should be 48000
+    // Check compatibility of samplerate with unit, for microkorg2 should be 48000
     if (desc->samplerate != 48000)
       return k_unit_err_samplerate;
 
@@ -228,10 +228,6 @@ class ModFx {
 
   inline void setTempo(uint32_t tempo) {
     mTempo = (tempo >> 16) + (tempo & 0xFFFF) / static_cast<float>(0x10000);
-  }
-
-  inline void tempo4ppqnTick(uint32_t counter) {
-    (void)counter;
   }
 
   /*===========================================================================*/
