@@ -126,16 +126,16 @@
   #elif TARGET_MODULE == k_unit_module_osc_val
     #pragma message "OSC module detected"
     #define UNIT_TARGET_MODULE_OSC
+    #undef UNIT_OUTPUT_CHANNELS
     #if defined(UNIT_TARGET_PLATFORM_MICROKORG2)
-      #include "unit_osc.h"
+      #define UNIT_OUTPUT_CHANNELS 8
       #undef UNIT_INPUT_CHANNELS
       #define UNIT_INPUT_CHANNELS 0
-      #undef UNIT_OUTPUT_CHANNELS
-      #define UNIT_OUTPUT_CHANNELS 8
-    #elif defined(UNIT_TARGET_PLATFORM_NTS1_MKII)
-      #include "unit_osc.h"
-      #undef UNIT_OUTPUT_CHANNELS
+    #else
       #define UNIT_OUTPUT_CHANNELS 1
+    #endif
+    #if defined(UNIT_TARGET_PLATFORM_NTS1_MKII) || defined(UNIT_TARGET_PLATFORM_MICROKORG2)
+      #include "unit_osc.h"
     #else
       #include "userosc.h"
       #undef unit_output_type_t
