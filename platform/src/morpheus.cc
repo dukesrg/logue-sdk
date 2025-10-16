@@ -21,6 +21,7 @@
 
 #define WAVE_COUNT_EXP 6
 #define LFO_AXES_COUNT 2
+#define VOICE_COUNT UNIT_OUTPUT_CHANNELS
 
 #define LFO_MAX_RATE .33333334f //maximum LFO rate in Hz divided by logarithmic slope 10/30
 #define LFO_RATE_LOG_BIAS 29.827234f //normalize logarithmic LFO for 0...1 log10(30+1)/0.05
@@ -69,7 +70,7 @@ typedef struct {
 } vco_t;
 
 static vco_t s_vco[LFO_AXES_COUNT];
-static float s_phase = 0.f;
+static float s_phase[VOICE_COUNT] = {0.f};
 
 enum {
 #ifdef USER_TARGET_PLATFORM
@@ -213,8 +214,8 @@ float get_vco(vco_t &vco) {
 }
 
 static inline __attribute__((optimize("Ofast"), always_inline))
-void note_on() {
-  s_phase = 0.f;
+void note_on(uint32_t voice_idx) {
+  s_phase[voice_idx] = 0.f;
   for (uint32_t i = 0; i < LFO_AXES_COUNT; i++) {
     set_vco_freq(i);
     if (s_vco[i].wave == 4)
@@ -285,13 +286,17 @@ __unit_callback void unit_render(const float * in, float * out, uint32_t frames)
     osc_w0f_for_notex4(vnote.val[0], vpitch->val[0] - vcvtq_f32_u32(vnote.val[0])),
     osc_w0f_for_notex4(vnote.val[1], vpitch->val[1] - vcvtq_f32_u32(vnote.val[1]))
   };
-  float *w0 = (float *)&vw0;
+//  float *w0 = (float *)&vw0;
+  float32x4x2_t *vphase = (float32x4x2_t *)s_phase;
+  unit_output_type_t * __restrict out_p;
   for (uint32_t voice_idx = 0; voice_idx < runtime_context->voiceLimit; voice_idx++) {
 //ToDo: TBC microKORG2 trigger field behaviour, bit order, voiceOffset and voiceLimit dependency
     if (runtime_context->trigger & (1 << voice_idx)) {
-      note_on();
+      note_on(voice_idx);
     }
-    unit_output_type_t * __restrict out_p = out + runtime_context->bufferOffset + (runtime_context->voiceOffset & 3) + (voice_idx >> 2) * (frames << 2);
+//ToDo: microKORG2 2x4 voices buffer alignment       
+    out_p = out + runtime_context->bufferOffset + (runtime_context->voiceOffset & 3) + (voice_idx >> 2) * (frames << 2);
+  }
 #else
   float w0 = osc_w0f_for_note(PITCH >> 8, PITCH & 0xFF);
   unit_output_type_t * __restrict out_p = out;
@@ -337,55 +342,58 @@ __unit_callback void unit_render(const float * in, float * out, uint32_t frames)
         mod_offset -= s_vco[mod_axis].depth;
       mod_scale = 1.f;
     }
-       
+//ToDo: microKORG2 2x4 voices buffer alignment       
     for (; out_p != out_e; out_p += STRIDE) {
-      float mod = (get_vco(s_vco[mod_axis]) + mod_offset) * mod_scale;
-      float phase = s_phase;
-      if (s_vco[mod_axis].modulation == lfo_mod_phase)
-        phase += mod + 1.f;
-      float out_f = osc_wavebank(phase, get_vco(s_vco[wave_axis]) * (WAVE_COUNT - 1));
-      if (s_vco[mod_axis].modulation < lfo_mod_phase)
-        out_f *= mod;
+      for(uint32_t voice_idx = 0; voice_idx < VOICE_COUNT; voice_idx++) {  
+        float mod = (get_vco(s_vco[mod_axis]) + mod_offset) * mod_scale;
+        float phase = s_phase[voice_idx];
+        if (s_vco[mod_axis].modulation == lfo_mod_phase)
+          phase += mod + 1.f;
+        float out_f = osc_wavebank(phase, get_vco(s_vco[wave_axis]) * (WAVE_COUNT - 1));
+        if (s_vco[mod_axis].modulation < lfo_mod_phase)
+          out_f *= mod;
 #ifdef UNIT_TARGET_PLATFORM_NTS3_KAOSS
-      out_f *= amp;
+        out_f *= amp;
 #endif
-      out_p[0] = float_to_output(out_f);
-#if UNIT_OUTPUT_CHANNELS == 2
-      out_p[1] = out_p[0];
+        out_p[0] = float_to_output(out_f);
+#ifndef UNIT_TARGET_PLATFORM_MICROKORG2
+        s_phase[0] += w0;
+        s_phase[0] -= (uint32_t)s_phase[0];
 #endif
+      }
 #ifdef UNIT_TARGET_PLATFORM_MICROKORG2
-      s_phase += w0[voice_idx];
-//      s_phase += w0;
-//      s_phase -= vcvtq_f32_u32(vcvtq_u32_f32(s_phase));
-#else
-      s_phase += w0;
-      s_phase -= (uint32_t)s_phase;
+      vphase->val[0] += vw0.val[0];
+      vphase->val[1] += vw0.val[1];
+      vphase->val[0] -= vcvtq_f32_u32(vcvtq_u32_f32(vphase->val[0]));
+      vphase->val[1] -= vcvtq_f32_u32(vcvtq_u32_f32(vphase->val[1]));
 #endif
     }
   } else {
+//ToDo: microKORG2 2x4 voices buffer alignment       
     for (; out_p != out_e; out_p += STRIDE) {
+      for(uint32_t voice_idx = 0; voice_idx < VOICE_COUNT; voice_idx++) {  
 //ToDo: variable grid mode
-      float out_f = osc_wavebank(s_phase, get_vco(s_vco[lfo_axis_x]) * (WAVE_COUNT_X - 1), get_vco(s_vco[lfo_axis_y]) * (WAVE_COUNT_Y - 1));
+        float out_f = osc_wavebank(s_phase[voice_idx], get_vco(s_vco[lfo_axis_x]) * (WAVE_COUNT_X - 1), get_vco(s_vco[lfo_axis_y]) * (WAVE_COUNT_Y - 1));
 #ifdef UNIT_TARGET_PLATFORM_NTS3_KAOSS
-      out_f *= amp;
+        out_f *= amp;
 #endif
-      out_p[0] = float_to_output(out_f);
+        out_p[0] = float_to_output(out_f);
 #if UNIT_OUTPUT_CHANNELS == 2
-      out_p[1] = out_p[0];
+        out_p[1] = out_p[0];
 #endif
+#ifndef UNIT_TARGET_PLATFORM_MICROKORG2
+        s_phase[0] += w0;
+        s_phase[0] -= (uint32_t)s_phase[0];
+#endif
+      }
 #ifdef UNIT_TARGET_PLATFORM_MICROKORG2
-      s_phase += w0[voice_idx];
-//      s_phase += w0;
-//      s_phase -= vcvtq_f32_u32(vcvtq_u32_f32(s_phase));
-#else
-      s_phase += w0;
-      s_phase -= (uint32_t)s_phase;
+      vphase->val[0] += vw0.val[0];
+      vphase->val[1] += vw0.val[1];
+      vphase->val[0] -= vcvtq_f32_u32(vcvtq_u32_f32(vphase->val[0]));
+      vphase->val[1] -= vcvtq_f32_u32(vcvtq_u32_f32(vphase->val[1]));
 #endif
     }
   }
-#ifdef UNIT_TARGET_PLATFORM_MICROKORG2
-  }
-#endif
 }
 
 #ifdef UNIT_TARGET_MODULE_OSC
@@ -397,7 +405,7 @@ __unit_callback void unit_note_on(uint8_t note, uint8_t velocity) {
   (void)note;
   (void)velocity;
 #endif
-  note_on();
+  note_on(0);
 }
 
 #ifndef UNIT_OSC_H_
@@ -599,7 +607,7 @@ __unit_callback void unit_touch_event(uint8_t id, uint8_t phase, uint32_t x, uin
   (void)id;
   switch(phase) {
     case k_unit_touch_phase_began:
-      note_on();
+      note_on(0);
       amp = 1.f;
 //fall through
     case k_unit_touch_phase_moved:
