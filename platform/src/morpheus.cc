@@ -130,6 +130,9 @@ q31_t shape_lfo_old;
 #ifdef UNIT_TARGET_PLATFORM_MICROKORG2
 #define MOD_PATCHES_COUNT 2
 static float32x4x2_t vModPatches[MOD_PATCHES_COUNT];
+#define STRIDE kMk2HalfVoices
+#else
+#define STRIDE UNIT_OUTPUT_CHANNELS
 #endif
 
 static inline __attribute__((optimize("Ofast"), always_inline))
@@ -276,20 +279,24 @@ __unit_callback void unit_render(const float * in, float * out, uint32_t frames)
 #endif
 #ifdef UNIT_TARGET_PLATFORM_MICROKORG2
 //ToDo: microKORG2 support
+  float32x4x2_t *vpitch = (float32x4x2_t *)&PITCH;
+  uint32x4x2_t vnote = {vcvtq_u32_f32(vpitch->val[0]), vcvtq_u32_f32(vpitch->val[1])};
+  float32x4x2_t vw0 = {
+    osc_w0f_for_notex4(vnote.val[0], vpitch->val[0] - vcvtq_f32_u32(vnote.val[0])),
+    osc_w0f_for_notex4(vnote.val[1], vpitch->val[1] - vcvtq_f32_u32(vnote.val[1]))
+  };
+  float *w0 = (float *)&vw0;
   for (uint32_t voice_idx = 0; voice_idx < runtime_context->voiceLimit; voice_idx++) {
-    float w0 = osc_w0f_for_note((uint8_t)PITCH[voice_idx], PITCH[voice_idx] - (uint8_t)PITCH[voice_idx]);
-//    out[runtime_context->bufferOffset + (voice_idx >> 2) * (frames << 2) + (runtime_context->voiceOffset & 3) + (i * runtime_context->outputStride)] = sample;
-//    uint32_t offset = runtime_context->bufferOffset + (runtime_context->voiceOffset & 3) + (voice_idx >> 2) * (frames << 2);
-    unit_output_type_t * __restrict out_p = out + runtime_context->bufferOffset + (runtime_context->voiceOffset & 3) + (voice_idx >> 2) * (frames << 2);
 //ToDo: TBC microKORG2 trigger field behaviour, bit order, voiceOffset and voiceLimit dependency
     if (runtime_context->trigger & (1 << voice_idx)) {
       note_on();
     }
+    unit_output_type_t * __restrict out_p = out + runtime_context->bufferOffset + (runtime_context->voiceOffset & 3) + (voice_idx >> 2) * (frames << 2);
 #else
   float w0 = osc_w0f_for_note(PITCH >> 8, PITCH & 0xFF);
   unit_output_type_t * __restrict out_p = out;
 #endif
-  const unit_output_type_t * out_e = out_p + frames * UNIT_OUTPUT_CHANNELS;  
+  const unit_output_type_t * out_e = out_p + frames * STRIDE;  
 
   for (uint32_t i = 0; i < LFO_AXES_COUNT; i++) {
     s_vco[i].offset = .5f;
@@ -331,7 +338,7 @@ __unit_callback void unit_render(const float * in, float * out, uint32_t frames)
       mod_scale = 1.f;
     }
        
-    for (; out_p != out_e; out_p += UNIT_OUTPUT_CHANNELS) {
+    for (; out_p != out_e; out_p += STRIDE) {
       float mod = (get_vco(s_vco[mod_axis]) + mod_offset) * mod_scale;
       float phase = s_phase;
       if (s_vco[mod_axis].modulation == lfo_mod_phase)
@@ -346,11 +353,17 @@ __unit_callback void unit_render(const float * in, float * out, uint32_t frames)
 #if UNIT_OUTPUT_CHANNELS == 2
       out_p[1] = out_p[0];
 #endif
+#ifdef UNIT_TARGET_PLATFORM_MICROKORG2
+      s_phase += w0[voice_idx];
+//      s_phase += w0;
+//      s_phase -= vcvtq_f32_u32(vcvtq_u32_f32(s_phase));
+#else
       s_phase += w0;
       s_phase -= (uint32_t)s_phase;
+#endif
     }
   } else {
-    for (; out_p != out_e; out_p += UNIT_OUTPUT_CHANNELS) {
+    for (; out_p != out_e; out_p += STRIDE) {
 //ToDo: variable grid mode
       float out_f = osc_wavebank(s_phase, get_vco(s_vco[lfo_axis_x]) * (WAVE_COUNT_X - 1), get_vco(s_vco[lfo_axis_y]) * (WAVE_COUNT_Y - 1));
 #ifdef UNIT_TARGET_PLATFORM_NTS3_KAOSS
@@ -360,8 +373,14 @@ __unit_callback void unit_render(const float * in, float * out, uint32_t frames)
 #if UNIT_OUTPUT_CHANNELS == 2
       out_p[1] = out_p[0];
 #endif
+#ifdef UNIT_TARGET_PLATFORM_MICROKORG2
+      s_phase += w0[voice_idx];
+//      s_phase += w0;
+//      s_phase -= vcvtq_f32_u32(vcvtq_u32_f32(s_phase));
+#else
       s_phase += w0;
       s_phase -= (uint32_t)s_phase;
+#endif
     }
   }
 #ifdef UNIT_TARGET_PLATFORM_MICROKORG2
