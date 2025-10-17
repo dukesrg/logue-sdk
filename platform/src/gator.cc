@@ -31,7 +31,8 @@
 
 enum {
   param_arp_gate = 
-#if defined(UNIT_OSC_H_) && defined(UNIT_TARGET_PLATFORM_NTS1_MKII) 
+#ifdef defined(UNIT_TARGET_PLATFORM_NTS1_MKII)
+#ifdef UNIT_OSC_H_
   k_num_unit_osc_fixed_param_id
 #elif defined(UNIT_MODFX_H_)
   k_num_unit_modfx_fixed_param_id
@@ -39,7 +40,8 @@ enum {
   k_num_unit_delfx_fixed_param_id
 #elif defined(UNIT_REVFX_H_)
   k_num_unit_revfx_fixed_param_id
-#elif defined(UNIT_GENERICFX_H_)
+#endif
+#elif defined(UNIT_TARGET_PLATFORM_NTS3_KAOSS) && defined(UNIT_GENERICFX_H_)
   k_num_unit_genericfx_fixed_param_id
 #else
   0U

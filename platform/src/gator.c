@@ -25,7 +25,7 @@ const __unit_header UNIT_HEADER_TYPE unit_header = {
     .api = UNIT_API_VERSION,
     .dev_id = 0x44756B65U,
     .unit_id = 0x32525447U,
-    .version = 0x00020000U,
+    .version = 0x00020100U,
     .name = UNIT_NAME,
 #if defined(UNIT_TARGET_PLATFORM_DRUMLOGUE) || defined(UNIT_TARGET_PLATFORM_MICROKORG2)
     .num_presets = 0,
