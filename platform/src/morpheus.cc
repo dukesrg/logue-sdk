@@ -7,6 +7,7 @@
  *  mailto: dukesrg@gmail.com
  */
 
+#include <string.h>
 #include "logue_wrap.h"
 
 #include "fixed_math.h"
@@ -133,9 +134,11 @@ q31_t shape_lfo_old;
 static float32x4x2_t vModPatches[MOD_PATCHES_COUNT];
 #define STRIDE kMk2HalfVoices
 #define STRIDE_COUNT ((uint32_t)runtime_context->voiceLimit >> 2)
+#define VOICE_LIMIT (runtime_context->voiceLimit & (STRIDE - 1))
 #else
 #define STRIDE UNIT_OUTPUT_CHANNELS
 #define STRIDE_COUNT 1
+#define VOICE_LIMIT UNIT_OUTPUT_CHANNELS
 #endif
 
 static inline __attribute__((optimize("Ofast"), always_inline))
@@ -280,7 +283,6 @@ __unit_callback void unit_render(const float * in, float * out, uint32_t frames)
   const unit_runtime_osc_context_t *runtime_context = (unit_runtime_osc_context_t *)runtime_desc->hooks.runtime_context;
 #endif
 #endif
-  unit_output_type_t * __restrict out_p;
 #ifdef UNIT_TARGET_PLATFORM_MICROKORG2
 //ToDo: microKORG2 support
   float32x4x2_t *vpitch = (float32x4x2_t *)&PITCH;
@@ -289,22 +291,21 @@ __unit_callback void unit_render(const float * in, float * out, uint32_t frames)
     osc_w0f_for_notex4(vnote.val[0], vpitch->val[0] - vcvtq_f32_u32(vnote.val[0])),
     osc_w0f_for_notex4(vnote.val[1], vpitch->val[1] - vcvtq_f32_u32(vnote.val[1]))
   };
-//  float *w0 = (float *)&vw0;
   float32x4x2_t *vphase = (float32x4x2_t *)s_phase;
-  unit_output_type_t * __restrict out_p;
+  out += runtime_context->bufferOffset + (runtime_context->voiceOffset & 3);
   for (uint32_t voice_idx = 0; voice_idx < runtime_context->voiceLimit; voice_idx++) {
 //ToDo: TBC microKORG2 trigger field behaviour, bit order, voiceOffset and voiceLimit dependency
     if (runtime_context->trigger & (1 << voice_idx)) {
       note_on(voice_idx);
     }
 //ToDo: microKORG2 2x4 voices buffer alignment       
-    out_p = out + runtime_context->bufferOffset + (runtime_context->voiceOffset & 3) + (voice_idx >> 2) * (frames << 2);
+//    out_p = out + runtime_context->bufferOffset + (runtime_context->voiceOffset & 3) + (voice_idx >> 2) * (frames << 2);
   }
 #else
   float w0 = osc_w0f_for_note(PITCH >> 8, PITCH & 0xFF);
-  out_p = out;
 #endif
-  const unit_output_type_t * out_e = out_p + frames * STRIDE;  
+  unit_output_type_t * __restrict out_p = out;
+  const unit_output_type_t * out_e;
 
   for (uint32_t i = 0; i < LFO_AXES_COUNT; i++) {
     s_vco[i].offset = .5f;
@@ -346,58 +347,66 @@ __unit_callback void unit_render(const float * in, float * out, uint32_t frames)
       mod_scale = 1.f;
     }
 //ToDo: microKORG2 2x4 voices buffer alignment
-//    for (uint32_t stride_idx = 0; stride_idx < STRIDE_COUNT; stride_idx++) {
-//      out_p = out + STRIDE_COUNT * STRIDE * frames;
-    for (; out_p != out_e; out_p += STRIDE) {
-      for(uint32_t voice_idx = 0; voice_idx < VOICE_COUNT; voice_idx++) {  
-        float mod = (get_vco(s_vco[mod_axis]) + mod_offset) * mod_scale;
-        float phase = s_phase[voice_idx];
-        if (s_vco[mod_axis].modulation == lfo_mod_phase)
-          phase += mod + 1.f;
-        float out_f = osc_wavebank(phase, get_vco(s_vco[wave_axis]) * (WAVE_COUNT - 1));
-        if (s_vco[mod_axis].modulation < lfo_mod_phase)
-          out_f *= mod;
+    for (uint32_t stride_idx = 0; stride_idx < STRIDE_COUNT; stride_idx++) {
+//ToDo: support kMk2QuarterVoices and kMk2SingleVoice
+      out_p = out + stride_idx * STRIDE * frames;
+      out_e = out_p + STRIDE * frames;
+      for (; out_p != out_e; out_p += STRIDE) {
+//ToDo: voice index adjust for second stride
+        for (uint32_t voice_idx = STRIDE * stride_idx; voice_idx < STRIDE * stride_idx + VOICE_LIMIT; voice_idx++) {  
+          float mod = (get_vco(s_vco[mod_axis]) + mod_offset) * mod_scale;
+          float phase = s_phase[voice_idx];
+          if (s_vco[mod_axis].modulation == lfo_mod_phase)
+            phase += mod + 1.f;
+          float out_f = osc_wavebank(phase, get_vco(s_vco[wave_axis]) * (WAVE_COUNT - 1));
+          if (s_vco[mod_axis].modulation < lfo_mod_phase)
+            out_f *= mod;
 #ifdef UNIT_TARGET_PLATFORM_NTS3_KAOSS
-        out_f *= amp;
+          out_f *= amp;
 #endif
-        out_p[0] = float_to_output(out_f);
+          out_p[0] = float_to_output(out_f);
 #ifndef UNIT_TARGET_PLATFORM_MICROKORG2
-        s_phase[0] += w0;
-        s_phase[0] -= (uint32_t)s_phase[0];
+          s_phase[voice_idx] += w0;
+          s_phase[voice_idx] -= (uint32_t)s_phase[voice_idx];
+#endif
+        }
+#ifdef UNIT_TARGET_PLATFORM_MICROKORG2
+        vphase->val[0] += vw0.val[0];
+        vphase->val[1] += vw0.val[1];
+        vphase->val[0] -= vcvtq_f32_u32(vcvtq_u32_f32(vphase->val[0]));
+        vphase->val[1] -= vcvtq_f32_u32(vcvtq_u32_f32(vphase->val[1]));
 #endif
       }
-#ifdef UNIT_TARGET_PLATFORM_MICROKORG2
-      vphase->val[0] += vw0.val[0];
-      vphase->val[1] += vw0.val[1];
-      vphase->val[0] -= vcvtq_f32_u32(vcvtq_u32_f32(vphase->val[0]));
-      vphase->val[1] -= vcvtq_f32_u32(vcvtq_u32_f32(vphase->val[1]));
-#endif
-//    }
     }
   } else {
 //ToDo: microKORG2 2x4 voices buffer alignment       
-    for (; out_p != out_e; out_p += STRIDE) {
-      for(uint32_t voice_idx = 0; voice_idx < VOICE_COUNT; voice_idx++) {  
+    for (uint32_t stride_idx = 0; stride_idx < STRIDE_COUNT; stride_idx++) {
+//ToDo: support kMk2QuarterVoices and kMk2SingleVoice
+      out_p = out + stride_idx * STRIDE * frames;
+      out_e = out_p + STRIDE * frames;
+      for (; out_p != out_e; out_p += STRIDE) {
+        for(uint32_t voice_idx = STRIDE * stride_idx; voice_idx < STRIDE * stride_idx + VOICE_LIMIT; voice_idx++) {  
 //ToDo: variable grid mode
-        float out_f = osc_wavebank(s_phase[voice_idx], get_vco(s_vco[lfo_axis_x]) * (WAVE_COUNT_X - 1), get_vco(s_vco[lfo_axis_y]) * (WAVE_COUNT_Y - 1));
+          float out_f = osc_wavebank(s_phase[voice_idx], get_vco(s_vco[lfo_axis_x]) * (WAVE_COUNT_X - 1), get_vco(s_vco[lfo_axis_y]) * (WAVE_COUNT_Y - 1));
 #ifdef UNIT_TARGET_PLATFORM_NTS3_KAOSS
-        out_f *= amp;
+          out_f *= amp;
 #endif
-        out_p[0] = float_to_output(out_f);
+          out_p[0] = float_to_output(out_f);
 #if UNIT_OUTPUT_CHANNELS == 2
-        out_p[1] = out_p[0];
+          out_p[1] = out_p[0];
 #endif
 #ifndef UNIT_TARGET_PLATFORM_MICROKORG2
-        s_phase[0] += w0;
-        s_phase[0] -= (uint32_t)s_phase[0];
+          s_phase[voice_idx] += w0;
+          s_phase[voice_idx] -= (uint32_t)s_phase[voice_idx];
 #endif
       }
 #ifdef UNIT_TARGET_PLATFORM_MICROKORG2
-      vphase->val[0] += vw0.val[0];
-      vphase->val[1] += vw0.val[1];
-      vphase->val[0] -= vcvtq_f32_u32(vcvtq_u32_f32(vphase->val[0]));
-      vphase->val[1] -= vcvtq_f32_u32(vcvtq_u32_f32(vphase->val[1]));
+        vphase->val[0] += vw0.val[0];
+        vphase->val[1] += vw0.val[1];
+        vphase->val[0] -= vcvtq_f32_u32(vcvtq_u32_f32(vphase->val[0]));
+        vphase->val[1] -= vcvtq_f32_u32(vcvtq_u32_f32(vphase->val[1]));
 #endif
+      }
     }
   }
 }
@@ -477,13 +486,13 @@ __unit_callback void unit_set_param_value(uint8_t index, int32_t value) {
 #ifdef USER_TARGET_PLATFORM
       value++;
 #endif
-      for (int32_t i = LFO_AXES_COUNT; i >= 0; i--) {
+      for (int32_t i = LFO_AXES_COUNT - 1; i >= 0; i--) {
         uint32_t newvalue;
 #ifdef USER_TARGET_PLATFORM
         newvalue = value / 10;
         s_vco[i].mode = value - newvalue * 10 - 1;
         if (s_vco[i].mode >= LFO_MODE_COUNT)
-          s_vco[i].mode = LFO_MODE_COUNT;
+          s_vco[i].mode = LFO_MODE_COUNT - 1;
 #else
         newvalue = value / LFO_MODE_COUNT;
         s_vco[i].mode = value - newvalue * LFO_MODE_COUNT;
@@ -535,20 +544,23 @@ __unit_callback int32_t unit_get_param_value(uint8_t index) {
 }
 
 __unit_callback const char * unit_get_param_str_value(uint8_t index, int32_t value) {
+#ifdef UNIT_TARGET_PLATFORM_MICROKORG2
+  static const char *modes[] = {"{One shot", "{Key trigger", "{Random", "{Free run"};
+  static char modename[25];
+  static const char *dimensions[] = {"|64{X|Amp", "|64{X|Ring", "|64{X|Phase", "32 X 2", "16 X 4", "8 X 8", "4 X 16", "2 X 32", "|Amp{X|64", "|Ring{X|64", "|Phase{X|64"};
+  static const char *wfnames[] = {"Saw", "Triangle", "Square", "Sine", "|Sample{&|Hold"};
+  static const char *wtnames[] = {"{Wavetable}", "{Wave bank}A ", "{Wave bank}B ", "{Wave bank}C ", "{Wave bank}D ", "{Wave bank}E ", "{Wave bank}F "};
+#else
 #if LFO_MODE_COUNT == 8
   static const char modes[] = "1 T R F 1STSRSFS";
 #else
   static const char modes[] = "1 T R F ";
 #endif
-#ifdef UNIT_TARGET_PLATFORM_MICROKORG2
-//ToDo: TBC microKORG2 param strings constraints
-  static const char dimensions[][12] = {"64}x{Amp", "64}x{Ring", "64}x{Phase", "32}x|2", "16}x|4", "8}x|8", "4}x|16", "2}x|32", "{Amp}x|64", "{Ring}x|64", "{Phase}x|64"};
-#else
-  static const char dimensions[][5] = {"64 A", "64 R", "64 P", "32 2", "16 4", "8 8", "4 16", "2 32", "A 64", "R 64", "P 64"};
-#endif
   static char modename[LFO_AXES_COUNT * 2 + 1];
-  static char wfnames[][4] = {"Saw", "Tri", "Sqr", "Sin", "SnH"};
+  static const char *dimensions[] = {"64 A", "64 R", "64 P", "32 2", "16 4", "8 8", "4 16", "2 32", "A 64", "R 64", "P 64"};
+  static const char *wfnames[] = {"Saw", "Tri", "Sqr", "Sin", "SnH"};
   static char wtnames[][5] = {"WT  ", "WA  ", "WB  ", "WC  ", "WD  ", "WE  ", "WF  "};
+#endif
   static const uint8_t wfcounts[] = {WAVE_COUNT, 16, 16, 14, 13, 15, 16};
   static char *s;
   value = (int16_t)value;
@@ -558,12 +570,17 @@ __unit_callback const char * unit_get_param_str_value(uint8_t index, int32_t val
 //ToDo: Rate / position string representation
       break;
     case param_lfo_modes:
-      for (int32_t i = LFO_AXES_COUNT; i >= 0; i--) {
+      modename[0] = 0;
+      for (int32_t i = LFO_AXES_COUNT - 1; i >= 0; i--) {
         uint32_t newvalue = value / LFO_MODE_COUNT;
         uint32_t idx = value - newvalue * LFO_MODE_COUNT;
         value = newvalue;
+#ifdef UNIT_TARGET_PLATFORM_MICROKORG2
+        strcat(modename, modes[idx]);
+#else
         modename[i * 2] = modes[idx * 2];
         modename[i * 2 + 1] = modes[idx * 2 + 1];
+#endif
       }
       return modename;
     case param_lfo_dimensions:
@@ -574,12 +591,24 @@ __unit_callback const char * unit_get_param_str_value(uint8_t index, int32_t val
         return wfnames[value];
       value -= 5;
       for (uint32_t i = 0; i < sizeof(wfcounts); i++) {
-        s = wtnames[i];
         if (value < wfcounts[i]) {
           value++;
           uint32_t j = value / 10;
+#ifdef UNIT_TARGET_PLATFORM_MICROKORG2
+          char wfname[16];
+          char wfnum[3];
+          s = wfnum;
+          if (j > 0)
+            *s++ = '0' + j;
+          *s = '0' + (value - j * 10);
+          strcpy(wfname, wtnames[i]);
+          strcat(wfname, wfnum);
+          s = wfname;
+#else
+          s = wtnames[i];
           s[2] = '0' + j;
           s[3] = '0' + (value - j * 10);
+#endif
           break;
         }
         value -= wfcounts[i];
