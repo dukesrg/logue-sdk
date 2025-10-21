@@ -132,9 +132,9 @@ q31_t shape_lfo_old;
 #ifdef UNIT_TARGET_PLATFORM_MICROKORG2
 #define MOD_PATCHES_COUNT 2
 static float32x4x2_t vModPatches[MOD_PATCHES_COUNT];
-#define STRIDE kMk2HalfVoices
-#define STRIDE_COUNT ((uint32_t)runtime_context->voiceLimit >> 2)
-#define VOICE_LIMIT (runtime_context->voiceLimit & (STRIDE - 1))
+#define STRIDE (runtime_context->outputStride)
+#define STRIDE_COUNT (((uint32_t)runtime_context->voiceLimit >> 3) + 1)
+#define VOICE_LIMIT (((runtime_context->voiceLimit - 1) & (STRIDE - 1)) + 1)
 #else
 #define STRIDE UNIT_OUTPUT_CHANNELS
 #define STRIDE_COUNT 1
@@ -154,7 +154,8 @@ static inline __attribute__((optimize("Ofast"), always_inline))
 void set_vco_rate(uint32_t index, uint32_t value) {
 #ifdef UNIT_TARGET_PLATFORM_MICROKORG2
 //ToDo: apply microKORG2 path modulation to X/Y Value
-  s_vco[index].shape = param_val_to_f32(value) + vModPatches[index].val[0][index];
+//  s_vco[index].shape = param_val_to_f32(value) + vModPatches[index].val[0][index];
+  s_vco[index].shape = param_val_to_f32(value);
 #else
   s_vco[index].shape = param_val_to_f32(value);
 #endif
@@ -292,14 +293,12 @@ __unit_callback void unit_render(const float * in, float * out, uint32_t frames)
     osc_w0f_for_notex4(vnote.val[1], vpitch->val[1] - vcvtq_f32_u32(vnote.val[1]))
   };
   float32x4x2_t *vphase = (float32x4x2_t *)s_phase;
-  out += runtime_context->bufferOffset + (runtime_context->voiceOffset & 3);
+  out += runtime_context->bufferOffset + runtime_context->voiceOffset;
   for (uint32_t voice_idx = 0; voice_idx < runtime_context->voiceLimit; voice_idx++) {
 //ToDo: TBC microKORG2 trigger field behaviour, bit order, voiceOffset and voiceLimit dependency
     if (runtime_context->trigger & (1 << voice_idx)) {
       note_on(voice_idx);
     }
-//ToDo: microKORG2 2x4 voices buffer alignment       
-//    out_p = out + runtime_context->bufferOffset + (runtime_context->voiceOffset & 3) + (voice_idx >> 2) * (frames << 2);
   }
 #else
   float w0 = osc_w0f_for_note(PITCH >> 8, PITCH & 0xFF);
@@ -346,13 +345,10 @@ __unit_callback void unit_render(const float * in, float * out, uint32_t frames)
         mod_offset -= s_vco[mod_axis].depth;
       mod_scale = 1.f;
     }
-//ToDo: microKORG2 2x4 voices buffer alignment
     for (uint32_t stride_idx = 0; stride_idx < STRIDE_COUNT; stride_idx++) {
-//ToDo: support kMk2QuarterVoices and kMk2SingleVoice
       out_p = out + stride_idx * STRIDE * frames;
       out_e = out_p + STRIDE * frames;
       for (; out_p != out_e; out_p += STRIDE) {
-//ToDo: voice index adjust for second stride
         for (uint32_t voice_idx = STRIDE * stride_idx; voice_idx < STRIDE * stride_idx + VOICE_LIMIT; voice_idx++) {  
           float mod = (get_vco(s_vco[mod_axis]) + mod_offset) * mod_scale;
           float phase = s_phase[voice_idx];
@@ -379,14 +375,11 @@ __unit_callback void unit_render(const float * in, float * out, uint32_t frames)
       }
     }
   } else {
-//ToDo: microKORG2 2x4 voices buffer alignment       
     for (uint32_t stride_idx = 0; stride_idx < STRIDE_COUNT; stride_idx++) {
-//ToDo: support kMk2QuarterVoices and kMk2SingleVoice
       out_p = out + stride_idx * STRIDE * frames;
       out_e = out_p + STRIDE * frames;
       for (; out_p != out_e; out_p += STRIDE) {
         for(uint32_t voice_idx = STRIDE * stride_idx; voice_idx < STRIDE * stride_idx + VOICE_LIMIT; voice_idx++) {  
-//ToDo: variable grid mode
           float out_f = osc_wavebank(s_phase[voice_idx], get_vco(s_vco[lfo_axis_x]) * (WAVE_COUNT_X - 1), get_vco(s_vco[lfo_axis_y]) * (WAVE_COUNT_Y - 1));
 #ifdef UNIT_TARGET_PLATFORM_NTS3_KAOSS
           out_f *= amp;
