@@ -9,7 +9,7 @@
 
 #include "logue_wrap.h"
 
-#if defined(UNIT_UNIT_TARGET_PLATFORM_MICROKORG2) && !defined(UNIT_OSC_H_)
+#if defined(UNIT_TARGET_PLATFORM_MICROKORG2) && !defined(UNIT_OSC_H_)
 #include "FxDefines.h"
 #define RESERVED kMk2FxParamModeIgnoreKnobStateAndModulation
 #else

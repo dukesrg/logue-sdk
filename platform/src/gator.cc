@@ -31,7 +31,7 @@
 
 enum {
   param_arp_gate = 
-#ifdef defined(UNIT_TARGET_PLATFORM_NTS1_MKII)
+#ifdef UNIT_TARGET_PLATFORM_NTS1_MKII
 #ifdef UNIT_OSC_H_
   k_num_unit_osc_fixed_param_id
 #elif defined(UNIT_MODFX_H_)
