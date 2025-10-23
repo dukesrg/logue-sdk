@@ -71,7 +71,6 @@ typedef struct {
 } vco_t;
 
 static vco_t s_vco[LFO_AXES_COUNT];
-static float s_phase[VOICE_COUNT] = {0.f};
 
 enum {
 #ifdef USER_TARGET_PLATFORM
@@ -135,10 +134,13 @@ static float32x4x2_t vModPatches[MOD_PATCHES_COUNT];
 #define STRIDE (runtime_context->outputStride)
 #define STRIDE_COUNT (((uint32_t)runtime_context->voiceLimit >> 3) + 1)
 #define VOICE_LIMIT (((runtime_context->voiceLimit - 1) & (STRIDE - 1)) + 1)
+float32x4x2_t vphase;
+float *s_phase = (float *)&vphase;
 #else
 #define STRIDE UNIT_OUTPUT_CHANNELS
 #define STRIDE_COUNT 1
 #define VOICE_LIMIT UNIT_OUTPUT_CHANNELS
+static float s_phase[VOICE_COUNT] = {0.f};
 #endif
 
 static inline __attribute__((optimize("Ofast"), always_inline))
@@ -292,10 +294,8 @@ __unit_callback void unit_render(const float * in, float * out, uint32_t frames)
     osc_w0f_for_notex4(vnote.val[0], vpitch->val[0] - vcvtq_f32_u32(vnote.val[0])),
     osc_w0f_for_notex4(vnote.val[1], vpitch->val[1] - vcvtq_f32_u32(vnote.val[1]))
   };
-  float32x4x2_t *vphase = (float32x4x2_t *)s_phase;
   out += runtime_context->bufferOffset + runtime_context->voiceOffset;
   for (uint32_t voice_idx = 0; voice_idx < runtime_context->voiceLimit; voice_idx++) {
-//ToDo: TBC microKORG2 trigger field behaviour, bit order, voiceOffset and voiceLimit dependency
     if (runtime_context->trigger & (1 << voice_idx)) {
       note_on(voice_idx);
     }
@@ -346,7 +346,7 @@ __unit_callback void unit_render(const float * in, float * out, uint32_t frames)
       mod_scale = 1.f;
     }
     for (uint32_t stride_idx = 0; stride_idx < STRIDE_COUNT; stride_idx++) {
-      out_p = out + stride_idx * STRIDE * frames;
+      out_p = out + stride_idx * STRIDE * (frames - 1);
       out_e = out_p + STRIDE * frames;
       for (; out_p != out_e; out_p += STRIDE) {
         for (uint32_t voice_idx = STRIDE * stride_idx; voice_idx < STRIDE * stride_idx + VOICE_LIMIT; voice_idx++) {  
@@ -360,23 +360,25 @@ __unit_callback void unit_render(const float * in, float * out, uint32_t frames)
 #ifdef UNIT_TARGET_PLATFORM_NTS3_KAOSS
           out_f *= amp;
 #endif
-          out_p[0] = float_to_output(out_f);
+          out_p[voice_idx] = float_to_output(out_f);
+#if UNIT_OUTPUT_CHANNELS == 2
+          out_p[voice_idx + 1] = out_p[voice_idx];
+          voice_idx++;
+#endif
 #ifndef UNIT_TARGET_PLATFORM_MICROKORG2
           s_phase[voice_idx] += w0;
           s_phase[voice_idx] -= (uint32_t)s_phase[voice_idx];
 #endif
         }
 #ifdef UNIT_TARGET_PLATFORM_MICROKORG2
-        vphase->val[0] += vw0.val[0];
-        vphase->val[1] += vw0.val[1];
-        vphase->val[0] -= vcvtq_f32_u32(vcvtq_u32_f32(vphase->val[0]));
-        vphase->val[1] -= vcvtq_f32_u32(vcvtq_u32_f32(vphase->val[1]));
+        vphase.val[stride_idx] += vw0.val[stride_idx];
+        vphase.val[stride_idx] -= vcvtq_f32_u32(vcvtq_u32_f32(vphase.val[stride_idx]));
 #endif
       }
     }
   } else {
     for (uint32_t stride_idx = 0; stride_idx < STRIDE_COUNT; stride_idx++) {
-      out_p = out + stride_idx * STRIDE * frames;
+      out_p = out + stride_idx * STRIDE * (frames - 1);
       out_e = out_p + STRIDE * frames;
       for (; out_p != out_e; out_p += STRIDE) {
         for(uint32_t voice_idx = STRIDE * stride_idx; voice_idx < STRIDE * stride_idx + VOICE_LIMIT; voice_idx++) {  
@@ -384,20 +386,19 @@ __unit_callback void unit_render(const float * in, float * out, uint32_t frames)
 #ifdef UNIT_TARGET_PLATFORM_NTS3_KAOSS
           out_f *= amp;
 #endif
-          out_p[0] = float_to_output(out_f);
+          out_p[voice_idx] = float_to_output(out_f);
 #if UNIT_OUTPUT_CHANNELS == 2
-          out_p[1] = out_p[0];
+          out_p[voice_idx + 1] = out_p[voice_idx];
+          voice_idx++;
 #endif
 #ifndef UNIT_TARGET_PLATFORM_MICROKORG2
           s_phase[voice_idx] += w0;
           s_phase[voice_idx] -= (uint32_t)s_phase[voice_idx];
 #endif
-      }
+        }
 #ifdef UNIT_TARGET_PLATFORM_MICROKORG2
-        vphase->val[0] += vw0.val[0];
-        vphase->val[1] += vw0.val[1];
-        vphase->val[0] -= vcvtq_f32_u32(vcvtq_u32_f32(vphase->val[0]));
-        vphase->val[1] -= vcvtq_f32_u32(vcvtq_u32_f32(vphase->val[1]));
+        vphase.val[stride_idx] += vw0.val[stride_idx];
+        vphase.val[stride_idx] -= vcvtq_f32_u32(vcvtq_u32_f32(vphase.val[stride_idx]));
 #endif
       }
     }
