@@ -16,7 +16,7 @@
 #include <ctype.h>
 #include <limits.h>
 
-#ifdef UNIT_TARGET_PLATFORM_DRUMLOGUE
+#if defined(UNIT_TARGET_PLATFORM_DRUMLOGUE) || defined(UNIT_TARGET_PLATFORM_MICROKORG2)
 #include <arm_neon.h>
 #endif
 
@@ -160,26 +160,22 @@ __unit_callback void unit_render(const float * in, float * out, uint32_t frames)
 #elif defined(UNIT_TARGET_PLATFORM_DRUMLOGUE) && defined (UNIT_TARGET_MODULE_MASTERFX)
   float master_amp = MasterRoute[0] == route_arp ? amp : MasterRoute[0]; 
   float sidechain_amp = MasterRoute[1] == route_arp ? amp : MasterRoute[1]; 
-  float32x4_t v_amp = {master_amp, master_amp, sidechain_amp, sidechain_amp};
 #endif
   const float * __restrict in_p = in;
   float * __restrict out_p = out;
   const float * out_e = out_p + frames * UNIT_OUTPUT_CHANNELS;  
   for (; out_p != out_e; in_p += UNIT_INPUT_CHANNELS, out_p += UNIT_OUTPUT_CHANNELS) {
-#ifdef UNIT_TARGET_PLATFORM_DRUMLOGUE
-#ifdef UNIT_TARGET_MODULE_MASTERFX
-    float32x4_t v_in = vld1q_f32(in_p) * v_amp;
-    vst1_f32(out_p, vadd_f32(vget_low_f32(v_in), vget_high_f32(v_in)));
-#else
-    vst1_f32(out_p, vld1_f32(in_p) * amp);
-#endif
-#else
-#if UNIT_OUTPUT_CHANNELS == 1
+#if defined(UNIT_TARGET_PLATFORM_DRUMLOGUE) && defined(UNIT_TARGET_MODULE_MASTERFX)
+    vst1_f32(out_p, vadd_f32(vget_low_f32(vld1q_f32(in_p)) * master_amp, vget_high_f32(vld1q_f32(in_p)) * sidechain_amp));
+#elif defined(UNIT_TARGET_PLATFORM_DRUMLOGUE) || defined(UNIT_TARGET_PLATFORM_MICROKORG2)
+    vst1q_f32(out_p, vmulq_n_f32(vld1q_f32(in_p), amp));
+    in_p += UNIT_INPUT_CHANNELS;
+    out_p += UNIT_OUTPUT_CHANNELS;
+#elif UNIT_OUTPUT_CHANNELS == 1
     *out_p = (in_p[0] + in_p[1]) * .5f * amp;
 #elif UNIT_OUTPUT_CHANNELS == 2
     out_p[0] = in_p[0] * amp;
     out_p[1] = in_p[1] * amp;
-#endif
 #endif
   }
   EG.advance(frames);
