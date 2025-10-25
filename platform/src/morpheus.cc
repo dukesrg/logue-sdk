@@ -154,13 +154,7 @@ void set_vco_freq(uint32_t index) {
 
 static inline __attribute__((optimize("Ofast"), always_inline))
 void set_vco_rate(uint32_t index, uint32_t value) {
-#ifdef UNIT_TARGET_PLATFORM_MICROKORG2
-//ToDo: apply microKORG2 path modulation to X/Y Value
-//  s_vco[index].shape = param_val_to_f32(value) + vModPatches[index].val[0][index];
   s_vco[index].shape = param_val_to_f32(value);
-#else
-  s_vco[index].shape = param_val_to_f32(value);
-#endif
   s_vco[index].freq = (fasterdbampf(s_vco[index].shape * LFO_RATE_LOG_BIAS) - 1.f) * LFO_MAX_RATE;
   set_vco_freq(index);
 }
@@ -308,7 +302,10 @@ __unit_callback void unit_render(const float * in, float * out, uint32_t frames)
 
   for (uint32_t i = 0; i < LFO_AXES_COUNT; i++) {
     s_vco[i].offset = .5f;
-#if defined(UNIT_TARGET_MODULE_OSC) && !defined(UNIT_TARGET_PLATFORM_MICROKORG2)
+#ifdef UNIT_TARGET_PLATFORM_MICROKORG2
+//ToDo: apply microKORG2 patch modulation per voice
+    s_vco[i].offset += vModPatches[i].val[0][0] * .5f;
+#elif defined(UNIT_TARGET_MODULE_OSC)
     if (s_vco[i].mode >= lfo_mode_one_shot_plus_shape_lfo) {
 #if defined(UNIT_TARGET_PLATFORM_NTS1_MKII) || defined(UNIT_TARGET_PLATFORM_NTS1)
 //ToDo: unipolar LFO for AMP mod
@@ -658,24 +655,40 @@ __unit_callback void unit_platform_exclusive(uint8_t messageId, void * data, uin
   const unit_runtime_osc_context_t *runtime_context = (unit_runtime_osc_context_t *)runtime_desc->hooks.runtime_context;
   switch (messageId) {
     case kMk2PlatformExclusiveModData: {
-      mk2_mod_data_t *mod_data = (mk2_mod_data_t *)data;
-      for (uint32_t i = 0; i < MOD_PATCHES_COUNT; i++) {
-//__asm__ volatile ( "nop\nnop\nnop\nnop\n");
+      const mk2_mod_data_t *mod_data = (mk2_mod_data_t *)data;
+      const uint32_t timbre_idx = 0;
 //ToDo: TBC if voiceOffset must be respected
-        for (uint32_t j = 0; j < runtime_context->voiceLimit; j++)
-          ((float *)&vModPatches[i])[j] = mod_data->data[runtime_context->voiceLimit * i + j];
-        vModPatches[i].val[0] *= mod_data->depth[0][i];
-        vModPatches[i].val[1] *= mod_data->depth[0][i];
-//__asm__ volatile ( "nop\nnop\nnop\nnop\n");
+//ToDo: TBC if timbre index must be respected
+      switch (runtime_context->voiceLimit) {
+        case kMk2MaxVoices:
+          vModPatches[0].val[0] = vmulq_n_f32(*(float32x4_t *)&mod_data->data[0], mod_data->depth[timbre_idx][0]);
+          vModPatches[0].val[1] = vmulq_n_f32(*(float32x4_t *)&mod_data->data[4], mod_data->depth[timbre_idx][0]);
+          vModPatches[1].val[0] = vmulq_n_f32(*(float32x4_t *)&mod_data->data[kMk2MaxVoices], mod_data->depth[timbre_idx][1]);
+          vModPatches[1].val[1] = vmulq_n_f32(*(float32x4_t *)&mod_data->data[kMk2MaxVoices + 4], mod_data->depth[timbre_idx][1]);
+          break;
+        case kMk2HalfVoices:
+          vModPatches[0].val[0] = vmulq_n_f32(*(float32x4_t *)&mod_data->data[0], mod_data->depth[timbre_idx][0]);
+          vModPatches[1].val[0] = vmulq_n_f32(*(float32x4_t *)&mod_data->data[kMk2HalfVoices], mod_data->depth[timbre_idx][1]);
+          break;
+        case kMk2QuarterVoices: {
+          float32x2x2_t data = vld2_f32(mod_data->data);
+          float32x2_t depth = vld1_f32(mod_data->depth[timbre_idx]);
+          vst2_f32((float *)vModPatches, (float32x2x2_t){data.val[0] * depth, data.val[1] * depth});
+          break;
+        }
+        case kMk2SingleVoice: {
+          float32x2_t data = vld1_f32(mod_data->data);
+          float32x2_t depth = vld1_f32(mod_data->depth[timbre_idx]);
+          vst1_f32((float *)vModPatches, data * depth);
+          break;
+        }
       }
       break;
     }
     case kMk2PlatformExclusiveModDestName: {
       mk2_mod_dest_name_t *mod_dest = (mk2_mod_dest_name_t *)data;
-      if (mod_dest->index < MOD_PATCHES_COUNT) {
-        for (uint32_t i = 0; i < UNIT_PARAM_NAME_LEN; i++)
-          mod_dest->name[i] = unit_header.params[mod_dest->index].name[i];
-      }
+      if (mod_dest->index < MOD_PATCHES_COUNT)
+        strcpy(mod_dest->name, unit_header.params[mod_dest->index].name);
       break;
     }  
 /*ToDo: TBC message purpose and data format
