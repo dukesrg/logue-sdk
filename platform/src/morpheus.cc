@@ -28,6 +28,22 @@
 #define LFO_MAX_RATE .33333334f //maximum LFO rate in Hz divided by logarithmic slope 10/30
 #define LFO_RATE_LOG_BIAS 29.827234f //normalize logarithmic LFO for 0...1 log10(30+1)/0.05
 
+#if defined(UNIT_TARGET_PLATFORM) || defined(UNIT_TARGET_PLATFORM_NTS1)
+#define BPM_SYNC_SUPPORTED
+static float s_bpmfreq;
+#ifdef UNIT_TARGET_PLATFORM_NTS1
+#define BPM_SYNC_SCALE 600.f // 60 sec / 0.1 beat
+#include "fx_api.h"
+static uint16_t s_tempo;
+//ToDo: NTS-1 LFO sync parameters support
+static uint16_t s_lfo_bpm_sync[LFO_AXES_COUNT];
+#define BPM_SYNC_VALUE s_lfo_bpm_sync
+#else
+#define BPM_SYNC_SCALE 3932160.f // 60 sec / 1/2<<16 beat
+#define BPM_SYNC_VALUE (&Params[param_lfo_bpm_sync_x])
+#endif 
+#endif
+
 enum {
   lfo_mode_one_shot = 0U,
   lfo_mode_key_trigger,
@@ -60,7 +76,7 @@ typedef struct {
   uint32_t dimension;
   uint32_t modulation;
   float depth;
-#ifdef UNIT_TARGET_PLATFORM
+#ifdef BPM_SYNC_SUPPORTED
   float bpmfreq;
 #endif
   float freq;  
@@ -109,7 +125,6 @@ enum {
 
 #ifdef UNIT_TARGET_PLATFORM
 static int32_t Params[PARAM_COUNT];
-static float s_bpmfreq;
 #endif
 
 #ifdef UNIT_OSC_H_
@@ -147,7 +162,7 @@ static float s_phase[VOICE_COUNT] = {0.f};
 static inline __attribute__((optimize("Ofast"), always_inline))
 void set_vco_freq(uint32_t index) {
     s_vco[index].lfo.setF0(
-#ifdef UNIT_TARGET_PLATFORM
+#ifdef BPM_SYNC_SUPPORTED
       s_vco[index].bpmfreq > 0.f ? s_vco[index].bpmfreq :
 #endif
     s_vco[index].freq, k_samplerate_recipf);
@@ -160,11 +175,18 @@ void set_vco_rate(uint32_t index, uint32_t value) {
   set_vco_freq(index);
 }
 
-#ifdef UNIT_TARGET_PLATFORM
+#ifdef BPM_SYNC_SUPPORTED
 static inline __attribute__((optimize("Ofast"), always_inline))
-void set_vco_bpm(uint32_t index, uint32_t value) {
-  s_vco[index].bpmfreq = s_bpmfreq * value;
+void update_vco_bpm(uint32_t index) {
+  s_vco[index].bpmfreq = s_bpmfreq * BPM_SYNC_VALUE[index];
   set_vco_freq(index);
+}
+
+static inline __attribute__((optimize("Ofast"), always_inline))
+void set_tempo(uint32_t tempo) {
+  s_bpmfreq = tempo == 0 ? 0.f : (BPM_SYNC_SCALE / tempo);
+  update_vco_bpm(lfo_axis_x);
+  update_vco_bpm(lfo_axis_y);
 }
 #endif
 
@@ -274,6 +296,13 @@ __unit_callback int8_t unit_init(const unit_runtime_desc_t * desc) {
 
 #ifdef USER_TARGET_PLATFORM
 void OSC_CYCLE(const user_osc_param_t * const runtime_context, int32_t * out, const uint32_t frames) {
+#ifdef UNIT_TARGET_PLATFORM_NTS1
+  uint16_t tempo = fx_get_bpm();
+  if (s_tempo != tempo) {
+    set_tempo(tempo);
+    s_tempo = tempo;
+  }
+#endif
 #else
 __unit_callback void unit_render(const float * in, float * out, uint32_t frames) {
   (void) in;
@@ -459,7 +488,7 @@ __unit_callback void unit_set_param_value(uint8_t index, int32_t value) {
 #ifdef UNIT_OSC_H_
     case param_lfo_bpm_sync_x:
     case param_lfo_bpm_sync_y:
-      set_vco_bpm(index - param_lfo_bpm_sync_x, value);
+      update_vco_bpm(index - param_lfo_bpm_sync_x);
       break;
 #endif
 #else
@@ -468,7 +497,7 @@ __unit_callback void unit_set_param_value(uint8_t index, int32_t value) {
         value -= value;
         index++;
       }
-      set_vco_bpm(index - param_lfo_bpm_sync_x, value);
+      update_vco_bpm(index - param_lfo_bpm_sync_x);
       break;
     case param_pitch:
       pitch = value << 5 & 0xFF00;
@@ -624,9 +653,7 @@ __unit_callback const char * unit_get_param_str_value(uint8_t index, int32_t val
 }
 
 __unit_callback void unit_set_tempo(uint32_t tempo) {
-  s_bpmfreq = tempo == 0 ? 0.f : (3932160.f / tempo); // 60 * (2<<16) / tempo
-  set_vco_bpm(lfo_axis_x, Params[param_lfo_bpm_sync_x]);
-  set_vco_bpm(lfo_axis_y, Params[param_lfo_bpm_sync_y]);
+  set_tempo(tempo);
 }
 
 #ifndef UNIT_TARGET_PLATFORM_MICROKORG2
