@@ -8,6 +8,7 @@
  */
 
 #include <string.h>
+#include <stdio.h>
 #include "logue_wrap.h"
 
 #include "fixed_math.h"
@@ -507,8 +508,8 @@ __unit_callback void unit_set_param_value(uint8_t index, int32_t value) {
       }
       s_vco[lfo_axis_x].dimensionexp = WAVE_COUNT_EXP - value;
       s_vco[lfo_axis_y].dimensionexp = value;
-      s_vco[lfo_axis_x].dimension = 2 << s_vco[lfo_axis_x].dimensionexp;
-      s_vco[lfo_axis_y].dimension = 2 << s_vco[lfo_axis_y].dimensionexp;
+      s_vco[lfo_axis_x].dimension = 1 << s_vco[lfo_axis_x].dimensionexp;
+      s_vco[lfo_axis_y].dimension = 1 << s_vco[lfo_axis_y].dimensionexp;
       break;
     case param_lfo_waveform_x:
     case param_lfo_waveform_y:
@@ -556,10 +557,23 @@ __unit_callback const char * unit_get_param_str_value(uint8_t index, int32_t val
   static char *s;
   value = (int16_t)value;
   switch (index) {
+#ifdef UNIT_TARGET_PLATFORM_MICROKORG2
     case param_lfo_rate_x:
     case param_lfo_rate_y:
-//ToDo: Rate / position string representation
-      break;
+      index -= param_lfo_rate_x;
+      if (s_vco[index].depth == 0.f) {
+        if (s_vco[index].dimensionexp == 0) {
+          sprintf(modename, "%.2f|db", ampdbf(param_val_to_f32(value)));
+        } else {       
+          sprintf(modename, "%.3f", (s_vco[index].dimension - 1) * param_val_to_f32(value) + 1.f);
+        }
+      } else if (s_vco[index].bpmfreq == 0.f) {
+        sprintf(modename, "%.3f|Hz", (dbampf(param_val_to_f32(value) * LFO_RATE_LOG_BIAS) - 1.f) * LFO_MAX_RATE);
+      } else {
+        sprintf(modename, "%02u.%01u|bar", (uint16_t)value >> 4, (uint16_t)value >> 2 & 0x3);
+      }
+      return modename;
+#endif
     case param_lfo_modes:
       modename[0] = 0;
       for (int32_t i = LFO_AXES_COUNT - 1; i >= 0; i--) {

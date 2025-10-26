@@ -9,6 +9,12 @@
 
 #include "logue_wrap.h"
 
+#ifdef UNIT_TARGET_PLATFORM_MICROKORG2
+#define VALUE_TYPE k_unit_param_type_strings
+#else
+#define VALUE_TYPE k_unit_param_type_none
+#endif
+
 const __unit_header UNIT_HEADER_TYPE unit_header = {
 #ifdef UNIT_TARGET_MODULE_GENERICFX
     .common = {
@@ -26,8 +32,8 @@ const __unit_header UNIT_HEADER_TYPE unit_header = {
     .num_params = PARAM_COUNT,
     .params = {
 #ifdef UNIT_TARGET_MODULE_OSC
-        {0, 1023, 0, 0, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {"X Value"}},
-        {0, 1023, 0, 0, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {"Y Value"}},
+        {0, 1023, 0, 0, VALUE_TYPE, 0, k_unit_param_frac_mode_fixed, 0, {"X Value"}},
+        {0, 1023, 0, 0, VALUE_TYPE, 0, k_unit_param_frac_mode_fixed, 0, {"Y Value"}},
 #endif
         {0, LFO_MODE_COUNT * LFO_MODE_COUNT - 1, 0, 0, k_unit_param_type_strings, 0, k_unit_param_frac_mode_fixed, 0, {"Modes"}},
         {0, 10, 0, 0, k_unit_param_type_strings, 0, k_unit_param_frac_mode_fixed, 0, {"Dimen."}},
