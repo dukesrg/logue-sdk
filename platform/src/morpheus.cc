@@ -101,7 +101,11 @@ enum {
   param_lfo_depth_y = k_user_osc_param_id6,
 #else
 #ifdef UNIT_TARGET_MODULE_OSC
+#ifdef UNIT_TARGET_PLATFORM_NTS1_MKII
+  param_lfo_rate_x = k_num_unit_osc_fixed_param_id,
+#else
   param_lfo_rate_x = 0U,
+#endif 
   param_lfo_rate_y,
   param_lfo_modes,
 #else
@@ -476,6 +480,10 @@ __unit_callback void unit_aftertouch(uint8_t note, uint8_t aftertouch) {
 void OSC_PARAM(uint16_t index, uint16_t value) {
 #else
 __unit_callback void unit_set_param_value(uint8_t index, int32_t value) {
+#ifdef UNIT_TARGET_PLATFORM_NTS1_MKII
+  if (index < k_num_unit_osc_fixed_param_id)
+    index += k_num_unit_osc_fixed_param_id;
+#endif
   Params[index] = value;
 #endif
   switch (index) {
@@ -561,6 +569,10 @@ __unit_callback void unit_set_param_value(uint8_t index, int32_t value) {
 
 #ifdef UNIT_TARGET_PLATFORM
 __unit_callback int32_t unit_get_param_value(uint8_t index) {
+#ifdef UNIT_TARGET_PLATFORM_NTS1_MKII
+  if (index < k_num_unit_osc_fixed_param_id)
+    index += k_num_unit_osc_fixed_param_id;
+#endif
   return Params[index];
 }
 
