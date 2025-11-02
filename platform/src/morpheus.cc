@@ -28,22 +28,6 @@
 #define LFO_MAX_RATE .33333334f //maximum LFO rate in Hz divided by logarithmic slope 10/30
 #define LFO_RATE_LOG_BIAS 29.827234f //normalize logarithmic LFO for 0...1 log10(30+1)/0.05
 
-#if defined(UNIT_TARGET_PLATFORM) || defined(UNIT_TARGET_PLATFORM_NTS1)
-#define BPM_SYNC_SUPPORTED
-static float s_bpmfreq;
-#ifdef UNIT_TARGET_PLATFORM_NTS1
-#define BPM_SYNC_SCALE 600.f // 60 sec / 0.1 beat
-#include "fx_api.h"
-static uint16_t s_tempo;
-//ToDo: NTS-1 LFO sync parameters support
-static uint16_t s_lfo_bpm_sync[LFO_AXES_COUNT];
-#define BPM_SYNC_VALUE s_lfo_bpm_sync
-#else
-#define BPM_SYNC_SCALE 3932160.f // 60 sec / 1/2<<16 beat
-#define BPM_SYNC_VALUE (&Params[param_lfo_bpm_sync_x])
-#endif 
-#endif
-
 enum {
   lfo_mode_one_shot = 0U,
   lfo_mode_key_trigger,
@@ -58,23 +42,40 @@ enum {
 };
 
 enum {
+#if LFO_AXES_COUNT == 2
   lfo_axis_x = 0U,
-  lfo_axis_y
+  lfo_axis_y,
+#endif
+  lfo_axes_count
 };
 
 enum {
-  lfo_mod_amp,
-  lfo_mod_ring,
-  lfo_mod_phase,
-  lfo_mod_none
+  mod_type_amp,
+  mod_type_ring,
+  mod_type_phase,
+  mod_type_none,
+  mod_type_count
 };
+
+#if defined(UNIT_TARGET_PLATFORM) || defined(UNIT_TARGET_PLATFORM_NTS1)
+#define BPM_SYNC_SUPPORTED
+static float s_bpmfreq;
+#ifdef UNIT_TARGET_PLATFORM_NTS1
+#define BPM_SYNC_SCALE 600.f // 60 sec / 0.1 beat
+#include "fx_api.h"
+static uint16_t s_tempo;
+//ToDo: NTS-1 LFO sync parameters support
+static uint16_t s_lfo_bpm_sync[lfo_axes_count];
+#define BPM_SYNC_VALUE s_lfo_bpm_sync
+#else
+#define BPM_SYNC_SCALE 3932160.f // 60 sec / 1/2<<16 beat
+#define BPM_SYNC_VALUE (&Params[param_lfo_bpm_sync_x])
+#endif 
+#endif
 
 typedef struct {
   uint32_t mode;
   uint32_t wave;
-  uint32_t dimensionexp;  
-  uint32_t dimension;
-  uint32_t modulation;
   float depth;
 #ifdef BPM_SYNC_SUPPORTED
   float bpmfreq;
@@ -87,7 +88,8 @@ typedef struct {
   q31_t phiold;
 } vco_t;
 
-static vco_t s_vco[LFO_AXES_COUNT];
+static vco_t s_vco[lfo_axes_count];
+static vco_t *s_vco_car, *s_vco_mod;
 
 enum {
 #ifdef USER_TARGET_PLATFORM
@@ -131,16 +133,14 @@ enum {
 static int32_t Params[PARAM_COUNT];
 #endif
 
+#ifdef UNIT_TARGET_MODULE_OSC
 #ifdef UNIT_OSC_H_
 const unit_runtime_desc_t *runtime_desc;
-#else
-uint16_t pitch = 0x3C00;
-float amp;
 #endif
-
-#ifdef UNIT_TARGET_MODULE_OSC
 #define PITCH runtime_context->pitch
 #else
+float amp;
+uint16_t pitch = 0x3C00;
 #define PITCH pitch
 #endif
 
@@ -162,6 +162,13 @@ float *s_phase = (float *)&vphase;
 #define VOICE_LIMIT UNIT_OUTPUT_CHANNELS
 static float s_phase[VOICE_COUNT] = {0.f};
 #endif
+
+static uint32_t dimensionexp[lfo_axes_count];
+static uint32_t dimension[lfo_axes_count];
+
+static uint32_t s_mod_type;
+static float s_mod_offset;
+static float s_mod_scale;
 
 static inline __attribute__((optimize("Ofast"), always_inline))
 void set_vco_freq(uint32_t index) {
@@ -245,7 +252,7 @@ float get_vco(vco_t &vco) {
 static inline __attribute__((optimize("Ofast"), always_inline))
 void note_on(uint32_t voice_idx) {
   s_phase[voice_idx] = 0.f;
-  for (uint32_t i = 0; i < LFO_AXES_COUNT; i++) {
+  for (uint32_t i = 0; i < lfo_axes_count; i++) {
     set_vco_freq(i);
     if (s_vco[i].wave == 4)
       s_vco[i].snh = osc_white();
@@ -334,7 +341,7 @@ __unit_callback void unit_render(const float * in, float * out, uint32_t frames)
   unit_output_type_t * __restrict out_p = out;
   const unit_output_type_t * out_e;
 
-  for (uint32_t i = 0; i < LFO_AXES_COUNT; i++) {
+  for (uint32_t i = 0; i < lfo_axes_count; i++) {
     s_vco[i].offset = .5f;
 #ifdef UNIT_TARGET_PLATFORM_MICROKORG2
 //ToDo: apply microKORG2 patch modulation per voice
@@ -342,13 +349,11 @@ __unit_callback void unit_render(const float * in, float * out, uint32_t frames)
 #elif defined(UNIT_TARGET_MODULE_OSC)
     if (s_vco[i].mode >= lfo_mode_one_shot_plus_shape_lfo) {
 #if defined(UNIT_TARGET_PLATFORM_NTS1_MKII) || defined(UNIT_TARGET_PLATFORM_NTS1)
-//ToDo: unipolar LFO for AMP mod
       if (runtime_context->shape_lfo | shape_lfo_old)
         s_vco[i].offset += q31_to_f32(runtime_context->shape_lfo) - .5f;
       shape_lfo_old = runtime_context->shape_lfo;
 #else
-      if (s_vco[i].modulation == lfo_mod_amp)
-        s_vco[i].offset += q31_to_f32(runtime_context->shape_lfo) * .5f;
+      s_vco[i].offset += q31_to_f32(runtime_context->shape_lfo) * .5f;
 #endif
     }
 #endif
@@ -356,37 +361,18 @@ __unit_callback void unit_render(const float * in, float * out, uint32_t frames)
       s_vco[i].offset += s_vco[i].shape - .5f;
   }
 
-  if (s_vco[lfo_axis_x].dimensionexp == 0 || s_vco[lfo_axis_y].dimensionexp == 0) {
-    uint32_t wave_axis;
-    uint32_t mod_axis;
-    if (s_vco[lfo_axis_x].modulation == lfo_mod_none) {
-      wave_axis = lfo_axis_x;
-      mod_axis = lfo_axis_y;
-    } else {
-      wave_axis = lfo_axis_y;
-      mod_axis = lfo_axis_x;
-    }
-
-    float mod_offset = -.5f;
-    float mod_scale = 2.f;
-    if (s_vco[mod_axis].modulation == lfo_mod_amp) {
-      if (s_vco[mod_axis].depth > 0.f)
-        mod_offset += s_vco[mod_axis].depth;
-      else 
-        mod_offset -= s_vco[mod_axis].depth;
-      mod_scale = 1.f;
-    }
+  if (s_mod_type != mod_type_none) {
     for (uint32_t stride_idx = 0; stride_idx < STRIDE_COUNT; stride_idx++) {
       out_p = out + stride_idx * STRIDE * (frames - 1);
       out_e = out_p + STRIDE * frames;
       for (; out_p != out_e; out_p += STRIDE) {
         for (uint32_t voice_idx = STRIDE * stride_idx; voice_idx < STRIDE * stride_idx + VOICE_LIMIT; voice_idx++) {  
-          float mod = (get_vco(s_vco[mod_axis]) + mod_offset) * mod_scale;
+          float mod = (get_vco(*s_vco_mod) + s_mod_offset) * s_mod_scale;
           float phase = s_phase[voice_idx];
-          if (s_vco[mod_axis].modulation == lfo_mod_phase)
-            phase += mod + 1.f;
-          float out_f = osc_wavebank(phase, get_vco(s_vco[wave_axis]) * (WAVE_COUNT - 1));
-          if (s_vco[mod_axis].modulation < lfo_mod_phase)
+          if (s_mod_type == mod_type_phase)
+            phase += mod;
+          float out_f = osc_wavebank(phase, get_vco(*s_vco_car) * (WAVE_COUNT - 1));
+          if (s_mod_type < mod_type_phase)
             out_f *= mod;
 #ifdef UNIT_TARGET_PLATFORM_NTS3_KAOSS
           out_f *= amp;
@@ -408,6 +394,7 @@ __unit_callback void unit_render(const float * in, float * out, uint32_t frames)
       }
     }
   } else {
+//ToDo: grid dimensions supports
     for (uint32_t stride_idx = 0; stride_idx < STRIDE_COUNT; stride_idx++) {
       out_p = out + stride_idx * STRIDE * (frames - 1);
       out_e = out_p + STRIDE * frames;
@@ -515,7 +502,7 @@ __unit_callback void unit_set_param_value(uint8_t index, int32_t value) {
 #ifdef USER_TARGET_PLATFORM
       value++;
 #endif
-      for (int32_t i = LFO_AXES_COUNT - 1; i >= 0; i--) {
+      for (int32_t i = lfo_axes_count - 1; i >= 0; i--) {
         uint32_t newvalue;
 #ifdef USER_TARGET_PLATFORM
         newvalue = value / 10;
@@ -530,23 +517,34 @@ __unit_callback void unit_set_param_value(uint8_t index, int32_t value) {
       }
       break;
     case param_lfo_dimensions:
-      if (value <= lfo_mod_phase) {
-        s_vco[lfo_axis_y].modulation = value;
+      if (value <= mod_type_phase) {
+        s_mod_type = value;
         value = 0;
+        s_vco_car = &s_vco[lfo_axis_x];
+        s_vco_mod = &s_vco[lfo_axis_y];
       } else {
-        s_vco[lfo_axis_y].modulation = lfo_mod_none;
-        value -= lfo_mod_phase;
+        s_mod_type = mod_type_none;
+        value -= mod_type_phase;
       }
       if (value >= WAVE_COUNT_EXP) {
-        s_vco[lfo_axis_x].modulation = value - WAVE_COUNT_EXP;
+        s_mod_type = value - WAVE_COUNT_EXP;
         value = WAVE_COUNT_EXP;
-      } else {
-        s_vco[lfo_axis_x].modulation = lfo_mod_none;
+        s_vco_car = &s_vco[lfo_axis_y];
+        s_vco_mod = &s_vco[lfo_axis_x];
       }
-      s_vco[lfo_axis_x].dimensionexp = WAVE_COUNT_EXP - value;
-      s_vco[lfo_axis_y].dimensionexp = value;
-      s_vco[lfo_axis_x].dimension = 1 << s_vco[lfo_axis_x].dimensionexp;
-      s_vco[lfo_axis_y].dimension = 1 << s_vco[lfo_axis_y].dimensionexp;
+      dimensionexp[lfo_axis_x] = WAVE_COUNT_EXP - value;
+      dimensionexp[lfo_axis_y] = value;
+      dimension[lfo_axis_x] = 1 << dimensionexp[lfo_axis_x];
+      dimension[lfo_axis_y] = 1 << dimensionexp[lfo_axis_y];
+      if (s_mod_type != mod_type_none) {
+//Amplitude Modulation - keep unipolar [0..1]
+//Ring Modulation - convert to bipolar [-1..1]
+//Phase Modulation - convert to unipolar [0..2] to keep positive phase wave sample lookup
+        static const float s_mod_offsets[] = {0.f, -.5f, 0.f};
+        static const float s_mod_scales[] = {1.f, 2.f, 2.f};
+        s_mod_offset = s_mod_offsets[s_mod_type];
+        s_mod_scale = s_mod_scales[s_mod_type];
+      }
       break;
     case param_lfo_waveform_x:
     case param_lfo_waveform_y:
@@ -589,7 +587,7 @@ __unit_callback const char * unit_get_param_str_value(uint8_t index, int32_t val
 #else
   static const char modes[] = "1 T R F ";
 #endif
-  static char modename[LFO_AXES_COUNT * 2 + 1];
+  static char modename[lfo_axes_count * 2 + 1];
   static const char *dimensions[] = {"64 A", "64 R", "64 P", "32 2", "16 4", "8 8", "4 16", "2 32", "A 64", "R 64", "P 64"};
   static const char *wfnames[] = {"Saw", "Tri", "Sqr", "Sin", "SnH"};
   static char wtnames[][5] = {"WT  ", "WA  ", "WB  ", "WC  ", "WD  ", "WE  ", "WF  "};
@@ -603,10 +601,11 @@ __unit_callback const char * unit_get_param_str_value(uint8_t index, int32_t val
     case param_lfo_rate_y:
       index -= param_lfo_rate_x;
       if (s_vco[index].depth == 0.f) {
-        if (s_vco[index].dimensionexp == 0) {
+        if (dimensionexp[index] == 0) {
+//ToDo: values for ring and phase mod
           sprintf(modename, "%.2f|db", ampdbf(param_val_to_f32(value)));
         } else {       
-          sprintf(modename, "%.3f", (s_vco[index].dimension - 1) * param_val_to_f32(value) + 1.f);
+          sprintf(modename, "%.3f", (dimension[index] - 1) * param_val_to_f32(value) + 1.f);
         }
       } else if (s_vco[index].bpmfreq == 0.f) {
         sprintf(modename, "%.3f|Hz", (dbampf(param_val_to_f32(value) * LFO_RATE_LOG_BIAS) - 1.f) * LFO_MAX_RATE);
@@ -617,7 +616,7 @@ __unit_callback const char * unit_get_param_str_value(uint8_t index, int32_t val
 #endif
     case param_lfo_modes:
       modename[0] = 0;
-      for (int32_t i = LFO_AXES_COUNT - 1; i >= 0; i--) {
+      for (int32_t i = lfo_axes_count - 1; i >= 0; i--) {
         uint32_t newvalue = value / LFO_MODE_COUNT;
         uint32_t idx = value - newvalue * LFO_MODE_COUNT;
         value = newvalue;
