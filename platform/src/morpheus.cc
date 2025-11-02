@@ -82,10 +82,10 @@ typedef struct {
 #endif
   float freq;  
   float shape;
-  float snh;
   float offset;
-  dsp::SimpleLFO lfo;
-  q31_t phiold;
+  float snh[VOICE_COUNT];
+  dsp::SimpleLFO lfo[VOICE_COUNT];
+  q31_t phiold[VOICE_COUNT];
 } vco_t;
 
 static vco_t s_vco[lfo_axes_count];
@@ -172,7 +172,8 @@ static float s_mod_scale;
 
 static inline __attribute__((optimize("Ofast"), always_inline))
 void set_vco_freq(uint32_t index) {
-    s_vco[index].lfo.setF0(
+  for (uint32_t voice_idx = 0; voice_idx < VOICE_COUNT; voice_idx++)
+    s_vco[index].lfo[voice_idx].setF0(
 #ifdef BPM_SYNC_SUPPORTED
       s_vco[index].bpmfreq > 0.f ? s_vco[index].bpmfreq :
 #endif
@@ -182,7 +183,7 @@ void set_vco_freq(uint32_t index) {
 static inline __attribute__((optimize("Ofast"), always_inline))
 void set_vco_rate(uint32_t index, uint32_t value) {
   s_vco[index].shape = param_val_to_f32(value);
-  s_vco[index].freq = (fasterdbampf(s_vco[index].shape * LFO_RATE_LOG_BIAS) - 1.f) * LFO_MAX_RATE;
+  s_vco[index].freq = (dbampf(s_vco[index].shape * LFO_RATE_LOG_BIAS) - 1.f) * LFO_MAX_RATE;
   set_vco_freq(index);
 }
 
@@ -202,38 +203,38 @@ void set_tempo(uint32_t tempo) {
 #endif
 
 static inline __attribute__((optimize("Ofast"), always_inline))
-float get_vco(vco_t &vco) {
+float get_vco(vco_t &vco, uint32_t index) {
   float x;
 
   if ((vco.mode == lfo_mode_one_shot
 #if LFO_MODE_COUNT == 8
   || vco.mode == lfo_mode_one_shot_plus_shape_lfo
 #endif
-  ) && vco.phiold > 0 && vco.lfo.phi0 <= 0) {
-    vco.lfo.phi0 = 0x7FFFFFFF;
-    vco.lfo.w0 = 0;
+  ) && vco.phiold[index] > 0 && vco.lfo[index].phi0 <= 0) {
+    vco.lfo[index].phi0 = 0x7FFFFFFF;
+    vco.lfo[index].w0 = 0;
   }
 
   switch (vco.wave) {
     case 0:
-      x = vco.lfo.saw_bi();
+      x = vco.lfo[index].saw_bi();
      break;
     case 1:
-      x = vco.lfo.triangle_bi();
+      x = vco.lfo[index].triangle_bi();
       break;
     case 2:
-      x = vco.lfo.square_bi();
+      x = vco.lfo[index].square_bi();
       break;
     case 3:
-      x = vco.lfo.sine_bi();
+      x = vco.lfo[index].sine_bi();
       break;
     case 4:
-      if (vco.phiold > 0 && vco.lfo.phi0 <= 0)
-        vco.snh = osc_white();
-      x = vco.snh;
+      if (vco.phiold[index] > 0 && vco.lfo[index].phi0 <= 0)
+        vco.snh[index] = osc_white();
+      x = vco.snh[index];
       break;
     default:
-      x = q31_to_f32(vco.lfo.phi0) * .5f + .5f;
+      x = q31_to_f32(vco.lfo[index].phi0) * .5f + .5f;
 #if LFO_WAVEFORM_COUNT == 159
       if (vco.wave >= (5 + WAVE_COUNT))
         x = osc_wave_scanf(wavesAll[vco.wave - (5 + WAVE_COUNT)], x);
@@ -243,8 +244,8 @@ float get_vco(vco_t &vco) {
       break;
   }
 
-  vco.phiold = vco.lfo.phi0;
-  vco.lfo.cycle();
+  vco.phiold[index] = vco.lfo[index].phi0;
+  vco.lfo[index].cycle();
 
   return clipminmaxf(0.f, x * vco.depth + vco.offset, 1.f);
 }
@@ -255,7 +256,7 @@ void note_on(uint32_t voice_idx) {
   for (uint32_t i = 0; i < lfo_axes_count; i++) {
     set_vco_freq(i);
     if (s_vco[i].wave == 4)
-      s_vco[i].snh = osc_white();
+      s_vco[i].snh[voice_idx] = osc_white();
     switch (s_vco[i].mode) {
       case lfo_mode_one_shot:
       case lfo_mode_key_trigger:
@@ -263,14 +264,14 @@ void note_on(uint32_t voice_idx) {
       case lfo_mode_key_trigger_plus_shape_lfo:
       case lfo_mode_one_shot_plus_shape_lfo:
 #endif
-        s_vco[i].lfo.reset();
-        s_vco[i].phiold = s_vco[i].lfo.phi0;
+        s_vco[i].lfo[voice_idx].reset();
+        s_vco[i].phiold[voice_idx] = s_vco[i].lfo[voice_idx].phi0;
         break;
       case lfo_mode_random:
 #if LFO_MODE_COUNT == 8
       case lfo_mode_random_plus_shape_lfo:
 #endif
-        s_vco[i].lfo.phi0 = f32_to_q31(osc_white());
+        s_vco[i].lfo[voice_idx].phi0 = f32_to_q31(osc_white());
       default:
         break;
     }
@@ -367,11 +368,11 @@ __unit_callback void unit_render(const float * in, float * out, uint32_t frames)
       out_e = out_p + STRIDE * frames;
       for (; out_p != out_e; out_p += STRIDE) {
         for (uint32_t voice_idx = STRIDE * stride_idx; voice_idx < STRIDE * stride_idx + VOICE_LIMIT; voice_idx++) {  
-          float mod = (get_vco(*s_vco_mod) + s_mod_offset) * s_mod_scale;
+          float mod = (get_vco(*s_vco_mod, voice_idx) + s_mod_offset) * s_mod_scale;
           float phase = s_phase[voice_idx];
           if (s_mod_type == mod_type_phase)
             phase += mod;
-          float out_f = osc_wavebank(phase, get_vco(*s_vco_car) * (WAVE_COUNT - 1));
+          float out_f = osc_wavebank(phase, get_vco(*s_vco_car, voice_idx) * (WAVE_COUNT - 1));
           if (s_mod_type < mod_type_phase)
             out_f *= mod;
 #ifdef UNIT_TARGET_PLATFORM_NTS3_KAOSS
@@ -400,7 +401,7 @@ __unit_callback void unit_render(const float * in, float * out, uint32_t frames)
       out_e = out_p + STRIDE * frames;
       for (; out_p != out_e; out_p += STRIDE) {
         for(uint32_t voice_idx = STRIDE * stride_idx; voice_idx < STRIDE * stride_idx + VOICE_LIMIT; voice_idx++) {  
-          float out_f = osc_wavebank(s_phase[voice_idx], get_vco(s_vco[lfo_axis_x]) * (WAVE_COUNT_X - 1), get_vco(s_vco[lfo_axis_y]) * (WAVE_COUNT_Y - 1));
+          float out_f = osc_wavebank(s_phase[voice_idx], get_vco(s_vco[lfo_axis_x], voice_idx) * (WAVE_COUNT_X - 1), get_vco(s_vco[lfo_axis_y], voice_idx) * (WAVE_COUNT_Y - 1));
 #ifdef UNIT_TARGET_PLATFORM_NTS3_KAOSS
           out_f *= amp;
 #endif
