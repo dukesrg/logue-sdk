@@ -22,7 +22,7 @@
  * 
  * Warning, lookup functions are overloaded, please take care of the parameter types.
  * 
- * 2020-2024 (c) Oleg Burdaev
+ * 2020-2025 (c) Oleg Burdaev
  * mailto: dukesrg@gmail.com
  *
  */
@@ -206,9 +206,9 @@ static custom_data("Raw " FORMAT_NAME " waveform", SAMPLE_COUNT_TOTAL, WAVE_COUN
 #endif
 #endif
 #ifdef WAVEBANK
-  DATA_TYPE wave_bank[WAVE_COUNT * DATA_TYPE_COUNT] = {WAVEBANK};
+  DATA_TYPE wave_bank[WAVE_COUNT * DATA_TYPE_COUNT] __attribute__((aligned(__alignof__(DATA_TYPE)))) = {WAVEBANK};
 #else
-  uint8_t wave_bank[WAVE_COUNT * DATA_TYPE_COUNT * sizeof(DATA_TYPE)] =
+  uint8_t wave_bank[WAVE_COUNT * DATA_TYPE_COUNT * sizeof(DATA_TYPE)] __attribute__((aligned(__alignof__(DATA_TYPE)))) =
 #ifdef WAVEBANK_NO_HOOKS
   {0};
 #else
@@ -217,7 +217,7 @@ static custom_data("Raw " FORMAT_NAME " waveform", SAMPLE_COUNT_TOTAL, WAVE_COUN
 #endif
 #pragma GCC diagnostic pop
 
-static DATA_TYPE *wavebank = (DATA_TYPE*)wave_bank;
+static DATA_TYPE *wavebank = (DATA_TYPE*)(void*)wave_bank;
 
   /**
    * Floating point linear wavetable lookup.
