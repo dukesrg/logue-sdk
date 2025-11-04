@@ -324,11 +324,11 @@ __unit_callback void unit_render(const float * in, float * out, uint32_t frames)
 #endif
 #ifdef UNIT_TARGET_PLATFORM_MICROKORG2
 //ToDo: microKORG2 support
-  float32x4x2_t *vpitch = (float32x4x2_t *)&PITCH;
-  uint32x4x2_t vnote = {vcvtq_u32_f32(vpitch->val[0]), vcvtq_u32_f32(vpitch->val[1])};
+  float32x4x2_t vpitch = {vld1q_f32(&PITCH[0]), vld1q_f32(&PITCH[4])};
+  uint32x4x2_t vnote = {vcvtq_u32_f32(vpitch.val[0]), vcvtq_u32_f32(vpitch.val[1])};
   float32x4x2_t vw0 = {
-    osc_w0f_for_notex4(vnote.val[0], vpitch->val[0] - vcvtq_f32_u32(vnote.val[0])),
-    osc_w0f_for_notex4(vnote.val[1], vpitch->val[1] - vcvtq_f32_u32(vnote.val[1]))
+    osc_w0f_for_notex4(vnote.val[0], vpitch.val[0] - vcvtq_f32_u32(vnote.val[0])),
+    osc_w0f_for_notex4(vnote.val[1], vpitch.val[1] - vcvtq_f32_u32(vnote.val[1]))
   };
   out += runtime_context->bufferOffset + runtime_context->voiceOffset;
   for (uint32_t voice_idx = 0; voice_idx < runtime_context->voiceLimit; voice_idx++) {
@@ -714,14 +714,14 @@ __unit_callback void unit_platform_exclusive(uint8_t messageId, void * data, uin
 //ToDo: TBC if timbre index must be respected
       switch (runtime_context->voiceLimit) {
         case kMk2MaxVoices:
-          vModPatches[0].val[0] = vmulq_n_f32(*(float32x4_t *)&mod_data->data[0], mod_data->depth[timbre_idx][0]);
-          vModPatches[0].val[1] = vmulq_n_f32(*(float32x4_t *)&mod_data->data[4], mod_data->depth[timbre_idx][0]);
-          vModPatches[1].val[0] = vmulq_n_f32(*(float32x4_t *)&mod_data->data[kMk2MaxVoices], mod_data->depth[timbre_idx][1]);
-          vModPatches[1].val[1] = vmulq_n_f32(*(float32x4_t *)&mod_data->data[kMk2MaxVoices + 4], mod_data->depth[timbre_idx][1]);
+          vModPatches[0].val[0] = vmulq_n_f32(vld1q_f32(&mod_data->data[0]), mod_data->depth[timbre_idx][0]);
+          vModPatches[0].val[1] = vmulq_n_f32(vld1q_f32(&mod_data->data[4]), mod_data->depth[timbre_idx][0]);
+          vModPatches[1].val[0] = vmulq_n_f32(vld1q_f32(&mod_data->data[kMk2MaxVoices]), mod_data->depth[timbre_idx][1]);
+          vModPatches[1].val[1] = vmulq_n_f32(vld1q_f32(&mod_data->data[kMk2MaxVoices + 4]), mod_data->depth[timbre_idx][1]);
           break;
         case kMk2HalfVoices:
-          vModPatches[0].val[0] = vmulq_n_f32(*(float32x4_t *)&mod_data->data[0], mod_data->depth[timbre_idx][0]);
-          vModPatches[1].val[0] = vmulq_n_f32(*(float32x4_t *)&mod_data->data[kMk2HalfVoices], mod_data->depth[timbre_idx][1]);
+          vModPatches[0].val[0] = vmulq_n_f32(vld1q_f32(&mod_data->data[0]), mod_data->depth[timbre_idx][0]);
+          vModPatches[1].val[0] = vmulq_n_f32(vld1q_f32(&mod_data->data[kMk2HalfVoices]), mod_data->depth[timbre_idx][1]);
           break;
         case kMk2QuarterVoices: {
           float32x2x2_t data = vld2_f32(mod_data->data);
