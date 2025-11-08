@@ -6,3 +6,4 @@ UCXXSRC = unit.cc
 UINCDIR  = ../../inc ../common/utils
 ULIBS  = -lm
 UDEFS = -DUNIT_NAME=$(UNIT_NAME) -DUNIT_TARGET_MODULE=k_unit_module_$(PROJECT_TYPE) -DPARAM_COUNT=11
+UDEFS += -Wcast-align

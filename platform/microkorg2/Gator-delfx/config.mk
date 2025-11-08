@@ -4,6 +4,7 @@ UNIT_NAME := \"$(firstword $(subst -, , $(PROJECT)))\"
 CSRC = header.c
 CXXSRC = unit.cc
 UINCDIR = ../../inc ../common/utils
-ULIBS = -lm
-ULIBS += -lc
+ULIBS = -lm -lc
 UDEFS = -DUNIT_NAME=$(UNIT_NAME) -DUNIT_TARGET_MODULE=k_unit_module_$(PROJECT_TYPE) -DPARAM_COUNT=8
+USE_CWARN = -W -Wall -Wextra -Wcast-align
+USE_CXXWARN = $(USE_CWARN)
