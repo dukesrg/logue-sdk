@@ -59,19 +59,15 @@ enum {
   mod_type_count
 };
 
-#if defined(UNIT_TARGET_PLATFORM) || defined(UNIT_TARGET_PLATFORM_NTS1)
-#define BPM_SYNC_SUPPORTED
+#ifdef BPM_SYNC_SUPPORTED
 static float s_bpmfreq;
+static uint16_t s_lfo_bpm_sync[lfo_axes_count];
 #ifdef UNIT_TARGET_PLATFORM_NTS1
 #define BPM_SYNC_SCALE .0016666667f // 0.1 beat / 60 sec                          
 #include "fx_api.h"
-static uint16_t s_tempo;
 //ToDo: NTS-1 LFO sync parameters support
-static uint16_t s_lfo_bpm_sync[lfo_axes_count];
-#define BPM_SYNC_VALUE s_lfo_bpm_sync
 #else
 #define BPM_SYNC_SCALE .25431316e-6f // 1 / 2^16 / 60 sec
-#define BPM_SYNC_VALUE (&Params[param_lfo_bpm_sync_x])
 #endif 
 #endif
 
@@ -103,6 +99,11 @@ enum {
   param_lfo_waveform_y = k_user_osc_param_id4,
   param_lfo_depth_x = k_user_osc_param_id5,
   param_lfo_depth_y = k_user_osc_param_id6,
+#ifdef BPM_SYNC_SUPPORTED
+//ToDo: NTS-1 BPM sync params
+  param_lfo_bpm_sync_x = k_num_user_osc_param_id,
+  param_lfo_bpm_sync_y,
+#endif
 #else
 #ifdef UNIT_TARGET_MODULE_OSC
 #ifdef UNIT_TARGET_PLATFORM_NTS1_MKII
@@ -120,12 +121,16 @@ enum {
   param_lfo_waveform_y,
   param_lfo_depth_x,
   param_lfo_depth_y,
+#ifdef UNIT_TARGET_PLATFORM_NTS3_KAOSS
+  param_pitch,
+#endif
+#ifdef BPM_SYNC_SUPPORTED
   param_lfo_bpm_sync_x,
 #ifdef UNIT_TARGET_PLATFORM_NTS3_KAOSS
   param_lfo_bpm_sync_y = param_lfo_bpm_sync_x,
-  param_pitch,
 #else
   param_lfo_bpm_sync_y,
+#endif
 #endif
 #endif
   param_num
@@ -188,7 +193,7 @@ void set_vco_rate(uint32_t index, uint32_t value) {
 #ifdef BPM_SYNC_SUPPORTED
 static inline __attribute__((optimize("Ofast"), always_inline))
 void update_vco_bpm(uint32_t index) {
-  s_vco[index].bpmfreq = s_bpmfreq * BPM_SYNC_VALUE[index];
+  s_vco[index].bpmfreq = s_bpmfreq * s_lfo_bpm_sync[index];
   set_vco_freq(index);
 }
 
@@ -504,6 +509,7 @@ __unit_callback void unit_set_param_value(uint8_t index, int32_t value) {
       }
 #endif
       index -= param_lfo_bpm_sync_x;
+      s_lfo_bpm_sync[index] = value;
       update_vco_bpm(index);
       break;
 #endif
