@@ -34,12 +34,13 @@ enum {
   lfo_mode_key_trigger,
   lfo_mode_random,
   lfo_mode_free_run,
-#if LFO_MODE_COUNT == 8
+#ifdef SHAPE_LFO_SUPPORTED
   lfo_mode_one_shot_plus_shape_lfo,
   lfo_mode_key_trigger_plus_shape_lfo,
   lfo_mode_random_plus_shape_lfo,
   lfo_mode_free_run_plus_shape_lfo,
 #endif
+  lfo_mode_count = LFO_MODE_COUNT
 };
 
 enum {
@@ -145,10 +146,6 @@ uint16_t pitch = 0x3C00;
 #define PITCH pitch
 #endif
 
-#if defined(UNIT_TARGET_PLATFORM_NTS1_MKII) || defined(UNIT_TARGET_PLATFORM_NTS1)
-q31_t shape_lfo_old;
-#endif
-
 #ifdef UNIT_TARGET_PLATFORM_MICROKORG2
 #define MOD_PATCHES_COUNT 2
 static float32x4x2_t vModPatches[MOD_PATCHES_COUNT];
@@ -212,8 +209,8 @@ float get_vco(vco_t &vco, uint32_t index) {
   float x;
 
   if ((vco.mode == lfo_mode_one_shot
-#if LFO_MODE_COUNT == 8
-  || vco.mode == lfo_mode_one_shot_plus_shape_lfo
+#ifdef SHAPE_LFO_SUPPORTED
+    || vco.mode == lfo_mode_one_shot_plus_shape_lfo
 #endif
   ) && vco.phiold[index] > 0 && vco.lfo[index].phi0 <= 0) {
     vco.lfo[index].phi0 = 0x7FFFFFFF;
@@ -265,7 +262,7 @@ void note_on(uint32_t voice_idx) {
     switch (s_vco[i].mode) {
       case lfo_mode_one_shot:
       case lfo_mode_key_trigger:
-#if LFO_MODE_COUNT == 8
+#ifdef SHAPE_LFO_SUPPORTED
       case lfo_mode_key_trigger_plus_shape_lfo:
       case lfo_mode_one_shot_plus_shape_lfo:
 #endif
@@ -273,7 +270,7 @@ void note_on(uint32_t voice_idx) {
         s_vco[i].phiold[voice_idx] = s_vco[i].lfo[voice_idx].phi0;
         break;
       case lfo_mode_random:
-#if LFO_MODE_COUNT == 8
+#ifdef SHAPE_LFO_SUPPORTED
       case lfo_mode_random_plus_shape_lfo:
 #endif
         s_vco[i].lfo[voice_idx].phi0 = f32_to_q31(osc_white());
@@ -344,21 +341,27 @@ __unit_callback void unit_render(const float * in, float * out, uint32_t frames)
   unit_output_type_t * __restrict out_p = out;
   const unit_output_type_t * out_e;
 
+#ifdef SHAPE_LFO_SUPPORTED
+    float shape_lfo = 0.f;
+#if defined(UNIT_TARGET_PLATFORM_NTS1_MKII) || defined(UNIT_TARGET_PLATFORM_NTS1)
+    static q31_t shape_lfo_old;
+    if (shape_lfo_old | runtime_context->shape_lfo)
+      shape_lfo = q31_to_f32(runtime_context->shape_lfo) - .5f;
+    shape_lfo_old = runtime_context->shape_lfo;
+#else
+    shape_lfo = q31_to_f32(runtime_context->shape_lfo) * .5f;
+#endif
+#endif
+
   for (uint32_t i = 0; i < lfo_axes_count; i++) {
     s_vco[i].offset = .5f;
+#ifdef SHAPE_LFO_SUPPORTED
+    if (s_vco[i].mode >= lfo_mode_one_shot_plus_shape_lfo)
+      s_vco[i].offset += shape_lfo;
+#endif
 #ifdef UNIT_TARGET_PLATFORM_MICROKORG2
 //ToDo: apply microKORG2 patch modulation per voice
     s_vco[i].offset += vModPatches[i].val[0][0] * .5f;
-#elif defined(UNIT_TARGET_MODULE_OSC)
-    if (s_vco[i].mode >= lfo_mode_one_shot_plus_shape_lfo) {
-#if defined(UNIT_TARGET_PLATFORM_NTS1_MKII) || defined(UNIT_TARGET_PLATFORM_NTS1)
-      if (runtime_context->shape_lfo | shape_lfo_old)
-        s_vco[i].offset += q31_to_f32(runtime_context->shape_lfo) - .5f;
-      shape_lfo_old = runtime_context->shape_lfo;
-#else
-      s_vco[i].offset += q31_to_f32(runtime_context->shape_lfo) * .5f;
-#endif
-    }
 #endif
     if (s_vco[i].depth == 0.f)
       s_vco[i].offset += s_vco[i].shape - .5f;
@@ -513,11 +516,11 @@ __unit_callback void unit_set_param_value(uint8_t index, int32_t value) {
 #ifdef USER_TARGET_PLATFORM
         newvalue = value / 10;
         s_vco[i].mode = value - newvalue * 10 - 1;
-        if (s_vco[i].mode >= LFO_MODE_COUNT)
-          s_vco[i].mode = LFO_MODE_COUNT - 1;
+        if (s_vco[i].mode >= lfo_mode_count)
+          s_vco[i].mode = lfo_mode_count - 1;
 #else
-        newvalue = value / LFO_MODE_COUNT;
-        s_vco[i].mode = value - newvalue * LFO_MODE_COUNT;
+        newvalue = value / lfo_mode_count;
+        s_vco[i].mode = value - newvalue * lfo_mode_count;
 #endif
         value = newvalue;
       }
@@ -589,7 +592,7 @@ __unit_callback const char * unit_get_param_str_value(uint8_t index, int32_t val
   static const char *wfnames[] = {"Saw", "Triangle", "Square", "Sine", "|Sample{&|Hold"};
   static const char *wtnames[] = {"{Wavetable}", "{Wave bank}A ", "{Wave bank}B ", "{Wave bank}C ", "{Wave bank}D ", "{Wave bank}E ", "{Wave bank}F "};
 #else
-#if LFO_MODE_COUNT == 8
+#ifdef SHAPE_LFO_SUPPORTED
   static const char modes[] = "1 T R F 1STSRSFS";
 #else
   static const char modes[] = "1 T R F ";
@@ -626,8 +629,8 @@ __unit_callback const char * unit_get_param_str_value(uint8_t index, int32_t val
     case param_lfo_modes:
       modename[0] = 0;
       for (int32_t i = lfo_axes_count - 1; i >= 0; i--) {
-        uint32_t newvalue = value / LFO_MODE_COUNT;
-        uint32_t idx = value - newvalue * LFO_MODE_COUNT;
+        uint32_t newvalue = value / lfo_mode_count;
+        uint32_t idx = value - newvalue * lfo_mode_count;
         value = newvalue;
 #ifdef UNIT_TARGET_PLATFORM_MICROKORG2
         strcat(modename, modes[idx]);
