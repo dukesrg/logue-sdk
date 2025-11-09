@@ -9,3 +9,5 @@ UDEFS = -DUNIT_NAME=$(UNIT_NAME) -DUNIT_TARGET_MODULE=k_unit_module_$(PROJECT_TY
 USE_LDOPT = --allow-multiple-definition
 USE_CWARN = -W -Wall -Wextra -Wcast-align
 USE_CXXWARN = $(USE_CWARN)
+#UDEFS += -DPERFMON_ENABLE
+#DEBUG = 1

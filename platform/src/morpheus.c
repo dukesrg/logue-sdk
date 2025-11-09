@@ -8,6 +8,7 @@
  */
 
 #include "logue_wrap.h"
+#include "logue_perf.h"
 
 #ifdef UNIT_TARGET_PLATFORM_MICROKORG2
 #define VALUE_TYPE k_unit_param_type_strings
@@ -44,15 +45,37 @@ const __unit_header UNIT_HEADER_TYPE unit_header = {
         {0, LFO_WAVEFORM_COUNT - 1, 0, 0, k_unit_param_type_strings, 0, k_unit_param_frac_mode_fixed, 0, {"X Wave"}},
         {0, LFO_WAVEFORM_COUNT - 1, 0, 0, k_unit_param_type_strings, 0, k_unit_param_frac_mode_fixed, 0, {"Y Wave"}},
         {-100, 100, 0, 0, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {"X Depth"}},
-        {-100, 100, 0, 0, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {"Y Depth"}},
-#ifdef UNIT_TARGET_MODULE_OSC
+#if defined(PERFMON_ENABLE) && (defined(UNIT_TARGET_PLATFORM_NTS1_MKII) || (defined(UNIT_TARGET_PLATFORM_MICROKORG2) && !defined(BPM_SYNC_SUPPORTED)))
+        PERFMON_PARAM,
 #else
-        {-512, 512, 0, 0, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {"BPM Sync"}},
+        {-100, 100, 0, 0, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {"Y Depth"}},
+#endif
+#ifdef UNIT_TARGET_MODULE_GENERICFX
+#if defined(PERFMON_ENABLE) && !defined(BPM_SYNC_SUPPORTED)
+        PERFMON_PARAM,
+#else
         {0, 1023, 0, 480, k_unit_param_type_midi_note, 0, k_unit_param_frac_mode_fixed, 0, {"Pitch"}},
 #endif
+#ifdef BPM_SYNC_SUPPORTED
+#ifdef PERFMON_ENABLE
+        PERFMON_PARAM,
+#else
+        {-512, 512, 0, 0, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {"BPM Sync"}},
+#endif
+#endif
+#endif
 #ifdef UNIT_TARGET_PLATFORM_MICROKORG2
+#ifdef BPM_SYNC_SUPPORTED
         {0, 512, 0, 0, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {"XBPMSync"}},
+#ifdef PERFMON_ENABLE
+        PERFMON_PARAM,
+#else
         {0, 512, 0, 0, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {"YBPMSync"}},
+#endif
+#else
+        {0, 0, 0, 0, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {""}},
+        {0, 0, 0, 0, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {""}},
+#endif
         {0, 0, 0, 0, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {""}},
         {0, 0, 0, 0, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {""}},
         {0, 0, 0, 0, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {""}},
@@ -67,8 +90,17 @@ const __unit_header UNIT_HEADER_TYPE unit_header = {
         {k_genericfx_param_assign_none, k_genericfx_curve_linear, k_genericfx_curve_unipolar, 0, LFO_WAVEFORM_COUNT - 1, 0},
         {k_genericfx_param_assign_none, k_genericfx_curve_linear, k_genericfx_curve_unipolar, -100, 100, 0},
         {k_genericfx_param_assign_none, k_genericfx_curve_linear, k_genericfx_curve_unipolar, -100, 100, 0},
+#ifdef BPM_SYNC_SUPPORTED
+        {k_genericfx_param_assign_none, k_genericfx_curve_linear, k_genericfx_curve_unipolar, -512, 512, 0},
+#endif
+#ifdef PERFMON_ENABLE
+        PERFMON_DEFAULT_MAPPING,
+#else
         {k_genericfx_param_assign_depth, k_genericfx_curve_linear, k_genericfx_curve_unipolar, 0, 1023, 480},
+#endif
+#ifndef BPM_SYNC_SUPPORTED
         {k_genericfx_param_assign_none, k_genericfx_curve_linear, k_genericfx_curve_unipolar, 0, 0, 0},
+#endif
     }
 #endif
 };

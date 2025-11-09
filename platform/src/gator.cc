@@ -8,6 +8,7 @@
  */
 
 #include "logue_wrap.h"
+#include "logue_perf.h"
 #include "frac_value.h"
 
 #include <cstddef>
@@ -154,6 +155,7 @@ __unit_callback void unit_reset() {
 }
 
 __unit_callback void unit_render(const float * in, float * out, uint32_t frames) {
+  PERFMON_START
   float amp = EG.out();
 #if defined(UNIT_OSC_H_) && defined(UNIT_TARGET_PLATFORM_NTS1_MKII)
   amp *= 1.f - q31_to_f32(runtime_context->shape_lfo);
@@ -181,9 +183,11 @@ __unit_callback void unit_render(const float * in, float * out, uint32_t frames)
   EG.advance(frames);
   ARP.advance(frames);
   Peak.process(in, frames, UNIT_INPUT_CHANNELS, PeakSourceMask);
+  PERFMON_END(frames)
 }
 
 __unit_callback void unit_set_param_value(uint8_t index, int32_t value) {
+  PERFMON_RESET(PARAM_COUNT - 1, index, value)
   value = (int16_t)value;
 #ifdef UNIT_TARGET_PLATFORM_NTS1_MKII
   if (index == 0) {
@@ -254,6 +258,7 @@ __unit_callback int32_t unit_get_param_value(uint8_t index) {
 
 __unit_callback const char * unit_get_param_str_value(uint8_t index, int32_t value) {
 //  return unit_get_param_frac_value(index, value);
+  PERFMON_VALUE(PARAM_COUNT - 1, index, value)
   value = (int16_t)value;
   switch (index) {
 #if defined(UNIT_TARGET_PLATFORM_DRUMLOGUE) && defined(UNIT_TARGET_MODULE_MASTERFX)

@@ -8,6 +8,7 @@
  */
 
 #include "logue_wrap.h"
+#include "logue_perf.h"
 
 #if defined(UNIT_TARGET_PLATFORM_MICROKORG2) && !defined(UNIT_OSC_H_)
 #include "FxDefines.h"
@@ -46,11 +47,19 @@ const __unit_header UNIT_HEADER_TYPE unit_header = {
         {0, 1023, 0, 0, k_unit_param_type_msec, 0, k_unit_param_frac_mode_decimal, RESERVED, {"Attack"}},
         {0, 1023, 0, 0, k_unit_param_type_msec, 0, k_unit_param_frac_mode_decimal, RESERVED, {"Decay"}},
         {-1023, 0, 0, 0, k_unit_param_type_db, 1, k_unit_param_frac_mode_decimal, RESERVED, {"Sustain"}},
+#if defined(PERFMON_ENABLE) && !(defined(UNIT_TARGET_PLATFORM_DRUMLOGUE) && defined(UNIT_TARGET_MODULE_MASTERFX))
+        PERFMON_PARAM,
+#else
         {0, 1023, 0, 0, k_unit_param_type_msec, 0, k_unit_param_frac_mode_decimal, RESERVED, {"Release"}},
+#endif
 #if defined(UNIT_TARGET_PLATFORM_DRUMLOGUE) && defined(UNIT_TARGET_MODULE_MASTERFX)
         {0, 2, 0, 2, k_unit_param_type_strings, 0, k_unit_param_frac_mode_fixed, 0, {"Master"}},
         {0, 2, 0, 0, k_unit_param_type_strings, 0, k_unit_param_frac_mode_fixed, 0, {"Sidech"}},
+#ifdef PERFMON_ENABLE
+        PERFMON_PARAM,
+#else
         {0, 2, 0, 0, k_unit_param_type_strings, 0, k_unit_param_frac_mode_fixed, 0, {"Peak"}}
+#endif
 #endif
     }
 #ifdef UNIT_TARGET_PLATFORM_NTS3_KAOSS
@@ -63,7 +72,11 @@ const __unit_header UNIT_HEADER_TYPE unit_header = {
         {k_genericfx_param_assign_none, k_genericfx_curve_linear, k_genericfx_curve_unipolar, 0, 1023, 0},
         {k_genericfx_param_assign_none, k_genericfx_curve_linear, k_genericfx_curve_unipolar, 0, 1023, 0},
         {k_genericfx_param_assign_depth, k_genericfx_curve_linear, k_genericfx_curve_unipolar, -1023, 0, 0},
-        {k_genericfx_param_assign_none, k_genericfx_curve_linear, k_genericfx_curve_unipolar, 0, 1023, 0}
+#ifdef PERFMON_ENABLE
+        PERFMON_DEFAULT_MAPPING
+#else
+        {k_genericfx_param_assign_none, k_genericfx_curve_linear, k_genericfx_curve_unipolar, 0, 1023, 0},
+#endif
     }
 #endif
 };

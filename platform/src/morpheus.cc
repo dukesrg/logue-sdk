@@ -10,6 +10,7 @@
 #include <string.h>
 #include <stdio.h>
 #include "logue_wrap.h"
+#include "logue_perf.h"
 
 #include "fixed_math.h"
 #include "simplelfo.hpp"
@@ -322,6 +323,7 @@ __unit_callback void unit_render(const float * in, float * out, uint32_t frames)
   const unit_runtime_osc_context_t *runtime_context = (unit_runtime_osc_context_t *)runtime_desc->hooks.runtime_context;
 #endif
 #endif
+  PERFMON_START
 #ifdef UNIT_TARGET_PLATFORM_MICROKORG2
 //ToDo: microKORG2 support
   float32x4x2_t vpitch = {vld1q_f32(&PITCH[0]), vld1q_f32(&PITCH[4])};
@@ -422,6 +424,7 @@ __unit_callback void unit_render(const float * in, float * out, uint32_t frames)
       }
     }
   }
+  PERFMON_END(frames)
 }
 
 #ifdef UNIT_TARGET_MODULE_OSC
@@ -468,6 +471,7 @@ __unit_callback void unit_aftertouch(uint8_t note, uint8_t aftertouch) {
 void OSC_PARAM(uint16_t index, uint16_t value) {
 #else
 __unit_callback void unit_set_param_value(uint8_t index, int32_t value) {
+  PERFMON_RESET(PARAM_COUNT - 1, index, value)
 #ifdef UNIT_TARGET_PLATFORM_NTS1_MKII
   if (index < k_num_unit_osc_fixed_param_id)
     index += k_num_unit_osc_fixed_param_id;
@@ -577,7 +581,8 @@ __unit_callback int32_t unit_get_param_value(uint8_t index) {
 }
 
 __unit_callback const char * unit_get_param_str_value(uint8_t index, int32_t value) {
-#ifdef UNIT_TARGET_PLATFORM_MICROKORG2
+  PERFMON_VALUE(PARAM_COUNT - 1, index, value)
+  #ifdef UNIT_TARGET_PLATFORM_MICROKORG2
   static const char *modes[] = {"{One shot", "{Key trigger", "{Random", "{Free run"};
   static char modename[25];
   static const char *dimensions[] = {"|64{X|Amp", "|64{X|Ring", "|64{X|Phase", "32 X 2", "16 X 4", "8 X 8", "4 X 16", "2 X 32", "|Amp{X|64", "|Ring{X|64", "|Phase{X|64"};
