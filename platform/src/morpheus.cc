@@ -280,7 +280,7 @@ static int32_t Params[PARAM_COUNT];
 
 #ifdef UNIT_TARGET_MODULE_OSC
 #ifdef UNIT_OSC_H_
-const unit_runtime_desc_t *runtime_desc;
+const unit_runtime_osc_context_t *runtime_context;
 #endif
 #define PITCH runtime_context->pitch
 #else
@@ -341,12 +341,10 @@ __unit_callback int8_t unit_init(const unit_runtime_desc_t * desc) {
     return k_unit_err_api_version;
   if (desc->samplerate != 48000)
     return k_unit_err_samplerate;
-#ifndef UNIT_TARGET_PLATFORM_MICROKORG2
-    if (desc->input_channels != UNIT_INPUT_CHANNELS || desc->output_channels != UNIT_OUTPUT_CHANNELS)
+  if (desc->input_channels != UNIT_INPUT_CHANNELS || desc->output_channels != UNIT_OUTPUT_CHANNELS)
     return k_unit_err_geometry;
-#endif
 #ifdef UNIT_OSC_H_
-  runtime_desc = desc;
+  runtime_context = (unit_runtime_osc_context_t *)desc->hooks.runtime_context;
 #endif
 #endif
 #if LFO_WAVEFORM_COUNT == 159
@@ -365,9 +363,6 @@ void OSC_CYCLE(const user_osc_param_t * const runtime_context, int32_t * out, co
 #else
 __unit_callback void unit_render(const float * in, float * out, uint32_t frames) {
   (void) in;
-#ifdef UNIT_TARGET_MODULE_OSC
-  const unit_runtime_osc_context_t *runtime_context = (unit_runtime_osc_context_t *)runtime_desc->hooks.runtime_context;
-#endif
 #endif
   PERFMON_START
 #ifdef UNIT_TARGET_PLATFORM_MICROKORG2
@@ -773,7 +768,6 @@ __unit_callback void unit_touch_event(uint8_t id, uint8_t phase, uint32_t x, uin
 #ifdef UNIT_TARGET_PLATFORM_MICROKORG2
 __unit_callback void unit_platform_exclusive(uint8_t messageId, void * data, uint32_t dataSize) {
   (void)dataSize;
-  const unit_runtime_osc_context_t *runtime_context = (unit_runtime_osc_context_t *)runtime_desc->hooks.runtime_context;
   switch (messageId) {
     case kMk2PlatformExclusiveModData: {
       const mk2_mod_data_t *mod_data = (mk2_mod_data_t *)data;
