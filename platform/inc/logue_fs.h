@@ -14,46 +14,81 @@
 #include <string.h>
 #include <dirent.h>
 
-#define MAX_FILES 256
+struct fs_dir {
+  static fs_dir *self;
+  int count;
+  char **names;
+  const char *path;
+  struct {
+    const char *prefix;
+    const char *suffix;
+  } filter;
 
-static inline __attribute__((optimize("Ofast"), always_inline))
-bool is_ext(const char *name, const char *ext) {
-    if (!name || !ext)
-        return false;
-    size_t namelen = strlen(name);
-    size_t extlen = strlen(ext);
-    if (namelen > extlen)
-        return false;
-    return strcmp(name + namelen - extlen, ext) == 0;
-}
+  static int flt(const struct dirent *entry) {
+    return entry->d_type == DT_REG
+      && (self->filter.prefix == NULL || strncmp(entry->d_name, self->filter.prefix, strlen(self->filter.prefix)) == 0)
+      && (self->filter.suffix == NULL || strcmp(entry->d_name + strlen(entry->d_name) - strlen(self->filter.suffix), self->filter.suffix) == 0);
+  }
 
-static inline __attribute__((optimize("Ofast"), always_inline))
-int compare_strings(const void *a, const void *b) {
-    return strcmp(*(const char **)a, *(const char **)b);
-}
+  static int cmp(const struct dirent **a, const struct dirent **b) {
+    return strcmp((*a)->d_name, (*b)->d_name);
+  }
 
-static inline __attribute__((optimize("Ofast"), always_inline))
-char **getfilenames(const char *path, const char *ext) {
-    static int count = 0;
-    static char *names[MAX_FILES];
-    DIR *dir;
-    struct dirent *entry;
+  void cleanup() {
+    if (names)
+      for (; count; free(names[--count]));
+    free(names);
+  }
 
-    while (count > 0)
-        free(names[--count]);
+  void remove(int index) {
+    for (; index < count - 1; index++)
+      names[index] = names[index + 1];
+    count--;
+  }
 
-    if ((dir = opendir(path)) == NULL)
-        return NULL;
+  void refresh() {
+    struct dirent **dirlist;
+    cleanup();
+    count = scandir(path, &dirlist, flt, cmp);
+    names = (char **)malloc(sizeof(char *) * count); 
+    if (count && names)
+      for (int i = 0; i < count; i++)
+        names[i] = strdup(dirlist[i]->d_name);
+    for (int i = 0; i < count; free(dirlist[i++]));
+    free(dirlist);
+  }
 
-    while ((entry = readdir(dir)) != NULL && count < MAX_FILES) {
-        if (entry->d_type != DT_REG || (ext != NULL && !is_ext(entry->d_name, ext)))
-            continue;
-        if ((names[count] = (char *)malloc(MAXNAMLEN + 1)) == NULL)
-            break;
-        strncpy(names[count++], entry->d_name, MAXNAMLEN + 1);
-    }
+  void refresh(const char *suffix) {
+    filter.suffix = suffix;
+    refresh();
+  }
 
-    closedir(dir);
-    qsort(names, count, sizeof(char *), compare_strings);
-    return names;
-}
+  void refresh(const char *prefix, const char *suffix) {
+    filter.prefix = prefix;
+    filter.suffix = suffix;
+    refresh();
+  }
+
+  void init() {
+    self = this;
+    names = NULL;
+    refresh();
+  }
+
+  fs_dir(const char *pth, const char *pfx, const char *sfx) : path(pth), filter({.prefix = pfx, .suffix = sfx}) {
+    init();
+  }
+
+  fs_dir(const char *pth, const char *sfx) : path(pth), filter({.prefix = NULL, .suffix = sfx}) {
+    init();
+  }
+
+  fs_dir(const char *pth) : path(pth) {
+    init();
+  }
+
+  ~fs_dir() {
+    cleanup();
+  }
+
+} *fs_dir::self = nullptr;

@@ -4,3 +4,6 @@
 [submodule "tools/emsdk"]
 	path = tools/emsdk
 	url = https://github.com/emscripten-core/emsdk.git
+[submodule "platform/ext/zip"]
+	path = platform/ext/zip
+	url = https://github.com/kuba--/zip
