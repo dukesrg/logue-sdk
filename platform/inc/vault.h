@@ -30,6 +30,7 @@
 #define RESOURCE_BIN_FILE_NAME_TEMPLATES "Prog_%03d.prog_bin", "Kit_%03d.kit_bin"
 #define RESOURCE_BIN_FILE_EXTENSION ".prog_bin", ".kit_bin"
 #define RESOURCE_FILE_PREFIX "%c%02d_"
+#define RESOURCE_FILE_HEADER "DLOGPRG\x00\x00\x03\x01\x00", "DLOGKIT\x00\x00\x00\x01\x00"
 #define RESOURCE_FILE_EXTENSION "." PRODUCT_CODE "prog", "." PRODUCT_CODE "kit"
 #define RESOURCE_NAME_OFFSET 20, 20
 #define RESOURCE_NAME_LENGTH 20, 20
@@ -62,8 +63,9 @@
 #define RESOURCE_BIN_FILE_NAME_TEMPLATES "Prog_%03d.prog_bin"
 #define RESOURCE_BIN_FILE_EXTENSION ".prog_bin"
 #define RESOURCE_FILE_PREFIX "%c_%c%d_"
+#define RESOURCE_FILE_HEADER "MK2PROG\x00\x00\x01\x00\x02"
 #define RESOURCE_FILE_EXTENSION "." PRODUCT_CODE "prog"
-#define RESOURCE_NAME_OFFSET 4
+#define RESOURCE_NAME_OFFSET 20
 #define RESOURCE_NAME_LENGTH 20
 #define RESOURCE_INIT_DATA Init_Program_mk2
 #define RESOURCE_INIT_DATA_SIZE Init_Program_mk2_len
@@ -80,18 +82,15 @@ static const char *favoriteFileName = "FavoriteData.fav_data";
 static const char *favoriteFileContent = "<minilogue_Favorite/>";
 #endif
 
+#define RESOURCE_HEADER_SIZE 16
+#define RESOURCE_HEADER_LENGTH_SIZE 4
+#define RESOURCE_HEADER_CRC_SIZE 4
+
 #define PRESET_INFO_FILE_CONTENT \
   "<" PRODUCT_NAME "_Preset>\n" \
   "  <DataID>%s</DataID>\n" \
   "  <Name>%s</Name>\n" \
   "</" PRODUCT_NAME "_Preset>\n"
-
-//DEBUG
-#undef PACKAGE_PATH
-#define PACKAGE_PATH "./" PRODUCT_CODE "/Programs"
-#undef RESOURCE_PATH
-#define RESOURCE_PATH "./" PRODUCT_CODE "/Programs", "./" PRODUCT_CODE "/Kits"
-//DEBUG
 
 static const char *fileInfoFileName = "FileInformation.xml";
 static const char *presetInfoFileName = "PresetInformation.xml";
@@ -101,6 +100,7 @@ static const char *resourceBinFileNameTemplate[] = {RESOURCE_BIN_FILE_NAME_TEMPL
 static const char *contentMetaTemplates[] = {CONTENT_META_TEMPLATES};
 static const char *contentDataTemplates[] = {CONTENT_DATA_TEMPLATES};
 static const char *resourceInfoFileContent[] = {RESOURCE_INFO_FILE_CONTENT};
+static const char *resourceFileHeader[12] = {RESOURCE_FILE_HEADER};
 static const char *resourceFileExtension[] = {RESOURCE_FILE_EXTENSION};
 static const int resourceNameOffset[] = {RESOURCE_NAME_OFFSET};
 static const int resourceNameLength[] = {RESOURCE_NAME_LENGTH};
@@ -119,21 +119,7 @@ enum {
   resource_type_program = 0U,
   resource_type_kit
 };
-/*
-static int getResourceIndex(char *name) {
-  char bank, genre;
-  int index;
-#if defined(UNIT_TARGET_PLATFORM_DRUMLOGUE)
-    sscanf(name, RESOURCE_FILE_PREFIX, &bank, &index);
-    bank -= 'A';
-#elif defined(UNIT_TARGET_PLATFORM_MICROKORG2)
-    sscanf(name, RESOURCE_FILE_PREFIX, &bank, &genre, &index);
-    bank = strchr(bankLetters, bank) - bankLetters;
-    genre -= 'A';
-#endif
-  return bank * BANK_SIZE + genre * GENRE_SIZE + index - 1;
-}
-*/
+
 static char *getResourceFileName(char *data, int index, int resourceType) {
   static char filename[MAXNAMLEN + 1];
   int len = sizeof(filename), pos;
@@ -272,8 +258,8 @@ size_t vault_export(const char *packageName, int packageType, int *resourceTypeC
           && st.st_size == (int)fread(buf, 1, st.st_size, fp)
           && fclose(fp) == 0
         ) {
-          src = buf;
-          size = st.st_size;
+          src = buf + RESOURCE_HEADER_SIZE;
+          memcpy(&size, buf + RESOURCE_HEADER_SIZE - RESOURCE_HEADER_LENGTH_SIZE, RESOURCE_HEADER_LENGTH_SIZE);
         }
       }
       getBinFileName(path, index, resourceType);
@@ -311,18 +297,22 @@ size_t vault_import(const char *packageName, int packageType, int *resourceTypeC
       if (zip_entry_open(zip, getBinFileName(path, index, resourceType)) < 0)
         continue;
       size = zip_entry_size(zip);
-      if (!buf || bufsize < size) {
+      if (!buf || bufsize < (size + RESOURCE_HEADER_SIZE + RESOURCE_HEADER_CRC_SIZE)) {
           free(buf);
-          buf = (char*)malloc(size);
-          bufsize = size;
+          bufsize = size + RESOURCE_HEADER_SIZE + RESOURCE_HEADER_CRC_SIZE;
+          buf = (char*)malloc(bufsize);
+          memcpy(buf, resourceFileHeader[resourceType], RESOURCE_HEADER_SIZE - RESOURCE_HEADER_LENGTH_SIZE);
+          memcpy(buf + RESOURCE_HEADER_SIZE - RESOURCE_HEADER_LENGTH_SIZE, &size, RESOURCE_HEADER_LENGTH_SIZE);
       }
-      zip_entry_noallocread(zip, (void *)buf, bufsize);
+      zip_entry_noallocread(zip, (void *)(buf + RESOURCE_HEADER_SIZE), size);
+      int crc = crc32(0, (const mz_uint8*)buf, bufsize - RESOURCE_HEADER_CRC_SIZE);
+      memcpy(buf + bufsize - RESOURCE_HEADER_CRC_SIZE, &crc, RESOURCE_HEADER_CRC_SIZE);
       int dir_index = index + offset;
       char *resourceFileName = getResourceFileName(buf, dir_index, resourceType);
       snprintf(path, sizeof(path), "%s/%s", resourcePath[resourceType], resourceFileName);
       FILE *fp = fopen(path, "wb");
       if (fp) {
-        total_write += fwrite(buf, 1, size, fp);
+        total_write += fwrite(buf, 1, bufsize, fp);
         fclose(fp);
 #ifdef UNIT_TARGET_PLATFORM_MICROKORG2
 //correct mk2 MODERN/FUTURE banks sorting
