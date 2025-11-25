@@ -9,11 +9,14 @@
 
 #include <string.h>
 #include <stdio.h>
+#include <arm_neon.h>
 
 #include "logue_wrap.h"
 #include "logue_perf.h"
 #include "logue_fs.h"
 #include "vault.h"
+
+#define PASSTHROUGH
 
 enum {
   param_export_bank = 0U,
@@ -71,13 +74,76 @@ __unit_callback int8_t unit_init(const unit_runtime_desc_t * desc) {
   return k_unit_err_none;
 }
 
-__unit_callback void unit_render(const float * in, float * out, uint32_t frames) {
+__unit_callback void __attribute__((optimize("-O3"))) unit_render(const float * in, float * out, uint32_t frames) {
   (void)in;
   (void)out;
   (void)frames;
   PERFMON_START
 #ifdef PERFMON_ENABLE
   size_t total;
+#endif
+#ifdef PASSTHROUGH
+#if UNIT_INPUT_CHANNELS == 0
+__asm__ __volatile__(
+  "veor q0, q0, q0\n"
+  "veor q1, q1, q1\n"
+  ".Lloop:\n"
+  "pld [%0, #128]\n"
+  "vst1.32 {q0,q1}, [%0]!\n"
+  "vst1.32 {q0,q1}, [%0]!\n"
+  "vst1.32 {q0,q1}, [%0]!\n"
+  "vst1.32 {q0,q1}, [%0]!\n"
+  "cmp %0, %1\n"
+  "bls .Lloop\n"
+  : "+r"(out)
+  : "r"(out + frames * UNIT_OUTPUT_CHANNELS)
+  : "memory", "q0", "q1"
+);
+#elif UNIT_INPUT_CHANNELS == UNIT_OUTPUT_CHANNELS
+__asm__ __volatile__(
+  ".Lloop:\n"
+  "pld [%0, #128]\n"
+  "pld [%1, #128]\n"
+  "vld1.32 {q0,q1}, [%0]!\n"
+  "vst1.32 {q0,q1}, [%1]!\n"
+  "vld1.32 {q0,q1}, [%0]!\n"
+  "vst1.32 {q0,q1}, [%1]!\n"
+  "vld1.32 {q0,q1}, [%0]!\n"
+  "vst1.32 {q0,q1}, [%1]!\n"
+  "vld1.32 {q0,q1}, [%0]!\n"
+  "vst1.32 {q0,q1}, [%1]!\n"
+  "cmp %1, %2\n"
+  "bls .Lloop\n"
+  : "+r"(in), "+r"(out)
+  : "r"(out + frames * UNIT_OUTPUT_CHANNELS)
+  : "memory", "q0", "q1"
+);
+#elif defined(UNIT_TARGET_MODULE_MASTERFX)
+__asm__ __volatile__(
+  ".Lloop:\n"
+  "pld [%0, #128]\n" 
+  "pld [%1, #64]\n"    
+  "vld4.32 {d0-d3}, [%0]!\n"
+  "vld4.32 {d4-d7}, [%0]!\n"
+  "vadd.f32 d0, d0, d2\n"
+  "vadd.f32 d2, d4, d6\n"
+  "vadd.f32 d1, d1, d3\n"
+  "vadd.f32 d3, d5, d7\n"
+  "vld4.32 {d4-d7}, [%0]!\n"
+  "vst2.32 {d0-d3}, [%1]!\n"
+  "vadd.f32 d4, d4, d6\n"
+  "vld4.32 {d0-d3}, [%0]!\n"
+  "vadd.f32 d5, d5, d7\n"
+  "vadd.f32 d6, d0, d2\n"
+  "vadd.f32 d7, d1, d3\n"
+  "vst2.32 {d4-d7}, [%1]!\n"
+  "cmp %1, %2\n"
+  "bls .Lloop\n"
+  : "+r"(in), "+r"(out)
+  : "r"(out + frames * UNIT_OUTPUT_CHANNELS)
+  : "memory", "q0", "q1", "q2", "q3"
+);
+#endif
 #endif
 
 //Should normally never happen
