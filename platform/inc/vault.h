@@ -17,22 +17,31 @@
 #pragma GCC diagnostic pop
 #include "logue_fs.h"
 
+#ifndef VAULT_COMPRESSION_LEVEL
+#define VAULT_COMPRESSION_LEVEL ZIP_DEFAULT_COMPRESSION_LEVEL
+#endif
+#ifndef VAULT_CHUNK_SIZE
+#define VAULT_CHUNK_SIZE 1024
+#endif
+
 #if defined(UNIT_TARGET_PLATFORM_DRUMLOGUE)
 #include "init_drmlg.h"
 #define PRODUCT_NAME "drumlogue"
 #define PRODUCT_CODE "drmlg"
-#define PACKAGE_PATH "/var/lib/drumlogued/userfs/Programs"
-#define PACKAGE_NAME_TEMPLATE "%s_%c_%d"
 #define RESOURCE_TYPE_COUNT 2
+#ifndef PACKAGE_PATH
+#define PACKAGE_PATH "/var/lib/drumlogued/userfs/Programs"
+#endif
+#ifndef RESOURCE_PATH
 #define RESOURCE_PATH "/var/lib/drumlogued/userfs/Programs", "/var/lib/drumlogued/userfs/Kits"
+#endif
 #define RESOURCE_INFO_FILE_CONTENT "<" PRODUCT_NAME "_ProgramInformation/>", "<" PRODUCT_NAME "_KitInformation/>"
 #define RESOURCE_INFO_FILE_NAME_TEMPLATE "Prog_%03d.prog_info", "Kit_%03d.kit_info"
 #define RESOURCE_BIN_FILE_NAME_TEMPLATES "Prog_%03d.prog_bin", "Kit_%03d.kit_bin"
-#define RESOURCE_BIN_FILE_EXTENSION ".prog_bin", ".kit_bin"
 #define RESOURCE_FILE_PREFIX "%c%02d_"
 #define RESOURCE_FILE_HEADER "DLOGPRG\x00\x00\x03\x01\x00", "DLOGKIT\x00\x00\x00\x01\x00"
 #define RESOURCE_FILE_EXTENSION "." PRODUCT_CODE "prog", "." PRODUCT_CODE "kit"
-#define RESOURCE_NAME_OFFSET 20, 20
+#define RESOURCE_NAME_OFFSET 4, 4
 #define RESOURCE_NAME_LENGTH 20, 20
 #define RESOURCE_INIT_DATA Init_Program_drmlg, Init_Kit_drmlg
 #define RESOURCE_INIT_DATA_SIZE Init_Program_drmlg_len, Init_Kit_drmlg_len
@@ -46,26 +55,27 @@
   "    <KitData>\n" \
   "      <Information>%s</Information>\n" \
   "      <KitBinary>%s</KitBinary>\n" \
-  "    </KitData>\n" \
-
+  "    </KitData>\n"
 #define BANK_SIZE 16
 #define GENRE_SIZE 0
 #elif defined(UNIT_TARGET_PLATFORM_MICROKORG2)
 #include "init_mk2.h"
 #define PRODUCT_NAME "microKORG2"
 #define PRODUCT_CODE "mk2"
-#define PACKAGE_PATH "/var/lib/microkorgd/userfs/Programs"
-#define PACKAGE_NAME_TEMPLATE "%s_%c_%d"
 #define RESOURCE_TYPE_COUNT 1
+#ifndef PACKAGE_PATH
+#define PACKAGE_PATH "/var/lib/microkorgd/userfs/Programs"
+#endif
+#ifndef RESOURCE_PATH
 #define RESOURCE_PATH "/var/lib/microkorgd/userfs/Programs"
+#endif
 #define RESOURCE_INFO_FILE_CONTENT "<" PRODUCT_NAME "_ProgramInformation/>"
 #define RESOURCE_INFO_FILE_NAME_TEMPLATE "Prog_%03d.prog_info"
 #define RESOURCE_BIN_FILE_NAME_TEMPLATES "Prog_%03d.prog_bin"
-#define RESOURCE_BIN_FILE_EXTENSION ".prog_bin"
 #define RESOURCE_FILE_PREFIX "%c_%c%d_"
 #define RESOURCE_FILE_HEADER "MK2PROG\x00\x00\x01\x00\x02"
 #define RESOURCE_FILE_EXTENSION "." PRODUCT_CODE "prog"
-#define RESOURCE_NAME_OFFSET 20
+#define RESOURCE_NAME_OFFSET 4
 #define RESOURCE_NAME_LENGTH 20
 #define RESOURCE_INIT_DATA Init_Program_mk2
 #define RESOURCE_INIT_DATA_SIZE Init_Program_mk2_len
@@ -91,6 +101,9 @@ static const char *favoriteFileContent = "<minilogue_Favorite/>";
   "  <DataID>%s</DataID>\n" \
   "  <Name>%s</Name>\n" \
   "</" PRODUCT_NAME "_Preset>\n"
+
+#include <time.h>
+struct timespec tss, tse;
 
 static const char *fileInfoFileName = "FileInformation.xml";
 static const char *presetInfoFileName = "PresetInformation.xml";
@@ -170,13 +183,30 @@ size_t getFileInfoContent(int *contentCounts, int packageType, char *buf, size_t
     packageType == package_type_lib ? " NumFavoriteData=\"1\"" :
 #endif
     "");
-
-  if (packageType == package_type_preset)
+#define PRESET_INFO_HEADER \
+"    <PresetInformation>\n" \
+"      <File>"
+#define PRESET_INFO_FILENAME "PresetInformation.xml"
+#define PRESET_INFO_FOOTER \
+"</File>\n" \
+"    </PresetInformation>\n"
+      
+    if (packageType == package_type_preset) {
     pos += snprintf(buf + pos, bufsize - pos,
       "    <PresetInformation>\n"
       "      <File>%s</File>\n"
       "    </PresetInformation>\n",
       presetInfoFileName);
+/*
+    pos = 0;
+    memcpy(buf + pos, PRESET_INFO_HEADER, sizeof(PRESET_INFO_HEADER) - 1);
+    pos += sizeof(PRESET_INFO_HEADER) - 1;
+    memcpy(buf + pos, PRESET_INFO_FILENAME, sizeof(PRESET_INFO_FILENAME) - 1);
+    pos += sizeof(PRESET_INFO_FILENAME) - 1;
+    memcpy(buf + pos, PRESET_INFO_FOOTER, sizeof(PRESET_INFO_FOOTER) - 1);
+    pos += sizeof(PRESET_INFO_FOOTER) - 1;
+*/
+  }
 
   for (int resourceType = 0; resourceType < RESOURCE_TYPE_COUNT; resourceType++)
     for (int index = 0; index < contentCounts[resourceType]; index++)
@@ -200,6 +230,7 @@ size_t getFileInfoContent(int *contentCounts, int packageType, char *buf, size_t
 }
 
 size_t vault_export(const char *packageName, int packageType, int *resourceTypeCount, int offset) {
+clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tss);
   size_t total_read = 0;
   const size_t bufsize = 65536;
   size_t size;
@@ -210,14 +241,61 @@ size_t vault_export(const char *packageName, int packageType, int *resourceTypeC
 
   const void *src;
   char path[MAXNAMLEN + 1];
+  struct zip_t *zip;
   FILE *fp;
   struct stat st;
-  struct zip_t *zip = zip_stream_open(NULL, 0, ZIP_DEFAULT_COMPRESSION_LEVEL, 'w');
+
+  snprintf(path, sizeof(path), "%s/%s%s", packagePath, packageName, packageExtension[packageType]);
+
+clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tse);
+printf("1. Init: %.3fms\n", (tse.tv_nsec-tss.tv_nsec)/1000000.f);
+clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tss);
+
+#ifndef VAULT_WRITE_DISABLE
+  zip = zip_open(path, VAULT_COMPRESSION_LEVEL, 'w');
+#else
+  zip = zip_stream_open(NULL, 0, VAULT_COMPRESSION_LEVEL, 'w');
+#endif
+
+clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tse);
+printf("2. Open ZIP: %.3fms\n", (tse.tv_nsec-tss.tv_nsec)/1000000.f);
+clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tss);
 
   size = getFileInfoContent(resourceTypeCount, packageType, buf, bufsize);
+
+clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tse);
+printf("3. Gen FileInfo: %.3fms\n", (tse.tv_nsec-tss.tv_nsec)/1000000.f);
+clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tss);
+
   zip_entry_open(zip, fileInfoFileName);
-  zip_entry_write(zip, buf, size);
+
+clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tse);
+printf("4. Open ZIP entry FileInfo: %.3fms\n", (tse.tv_nsec-tss.tv_nsec)/1000000.f);
+clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tss);
+
+  char *tbuf = buf;
+  while ((int)size >= VAULT_CHUNK_SIZE) {
+    zip_entry_write(zip, tbuf, VAULT_CHUNK_SIZE);
+    size -= VAULT_CHUNK_SIZE;
+    tbuf += VAULT_CHUNK_SIZE;
+
+clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tse);
+printf("5.\tWrite ZIP entry chunk: %.3fms\n", (tse.tv_nsec-tss.tv_nsec)/1000000.f);
+clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tss);
+  }
+  if ((int)size > 0) {
+    zip_entry_write(zip, tbuf, size);
+
+clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tse);
+printf("6.\tWrite ZIP entry last chunk: %.3fms\n", (tse.tv_nsec-tss.tv_nsec)/1000000.f);
+clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tss);
+  }
+
   zip_entry_close(zip);
+
+clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tse);
+printf("7. Close ZIP entry: %.3fms\n", (tse.tv_nsec-tss.tv_nsec)/1000000.f);
+clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tss);
 
   if (packageType == package_type_preset) {
     size = snprintf(buf, bufsize, PRESET_INFO_FILE_CONTENT, packageName, packageName);
@@ -233,6 +311,10 @@ size_t vault_export(const char *packageName, int packageType, int *resourceTypeC
   }
 #endif
 
+clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tse);
+printf("8. Write ZIP entry PresetInfo: %.3fms\n", (tse.tv_nsec-tss.tv_nsec)/1000000.f);
+clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tss);
+
   for (int resourceType = 0; resourceType < RESOURCE_TYPE_COUNT; resourceType++) {
     fs_dir dir = fs_dir(resourcePath[resourceType], resourceFileExtension[resourceType]);
     for (int index = 0; index < resourceTypeCount[resourceType]; index++) {
@@ -240,6 +322,10 @@ size_t vault_export(const char *packageName, int packageType, int *resourceTypeC
       zip_entry_open(zip, path);
       zip_entry_write(zip, resourceInfoFileContent[resourceType], strlen(resourceInfoFileContent[resourceType]));
       zip_entry_close(zip);
+
+clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tse);
+printf("9. Write ZIP entry Info file: %.3fms\n", (tse.tv_nsec-tss.tv_nsec)/1000000.f);
+clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tss);
 
       src = resourceInitData[resourceType];         
       size = resourceInitDataSize[resourceType];
@@ -262,58 +348,222 @@ size_t vault_export(const char *packageName, int packageType, int *resourceTypeC
           memcpy(&size, buf + RESOURCE_HEADER_SIZE - RESOURCE_HEADER_LENGTH_SIZE, RESOURCE_HEADER_LENGTH_SIZE);
         }
       }
+
+clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tse);
+printf("10.\tRead bin entry: %.3fms\n", (tse.tv_nsec-tss.tv_nsec)/1000000.f);
+clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tss);
+
       getBinFileName(path, index, resourceType);
       zip_entry_open(zip, path);
-      zip_entry_write(zip, src, size);
+
+clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tse);
+printf("10.\tWrite ZIP entry post-open: %.3fms\n", (tse.tv_nsec-tss.tv_nsec)/1000000.f);
+clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tss);
+
+      tbuf = (char*)src;
+      while ((int)size >= VAULT_CHUNK_SIZE) {
+        zip_entry_write(zip, tbuf, VAULT_CHUNK_SIZE);
+        size -= VAULT_CHUNK_SIZE;
+        tbuf += VAULT_CHUNK_SIZE;
+
+clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tse);
+printf("10.\tWrite ZIP entry program chunk: %.3fms\n", (tse.tv_nsec-tss.tv_nsec)/1000000.f);
+clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tss);
+
+      }
+
+      if ((int)size > 0) {
+        zip_entry_write(zip, tbuf, size);
+
+clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tse);
+printf("11.\tWrite ZIP entry program last chunk: %.3fms\n", (tse.tv_nsec-tss.tv_nsec)/1000000.f);
+clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tss);
+      }
+
       zip_entry_close(zip);
       total_read += size;
+
+clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tse);
+printf("12. Close ZIP entry program: %.3fms\n", (tse.tv_nsec-tss.tv_nsec)/1000000.f);
+clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tss);
     }
   }
 
   free(buf);
-  snprintf(path, sizeof(path), "%s/%s%s", packagePath, packageName, packageExtension[packageType]);
-  fp = fopen(path, "wb");
-  if (!fp)
-    return total_read;
-  zip_stream_copy(zip, (void **)&buf, &size);
-  zip_stream_close(zip);
-  fwrite(buf, 1, size, fp);
-  fclose(fp);  
-  free(buf);
+
+clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tse);
+printf("13. Free: %.3fms\n", (tse.tv_nsec-tss.tv_nsec)/1000000.f);
+clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tss);
+
+  zip_close(zip);
+
+clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tse);
+printf("14. ZIP close: %.3fms\n", (tse.tv_nsec-tss.tv_nsec)/1000000.f);
+clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tss);
+
   return total_read;
 }
 
 size_t vault_import(const char *packageName, int packageType, int *resourceTypeCount, int offset) {
+clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tss);
   size_t total_write = 0;
-  char *buf = NULL;
-  size_t bufsize = 0, size;
+//  char *buf = NULL;
+//  size_t bufsize = 0, size;
+  char buf[VAULT_CHUNK_SIZE];
+  size_t bufsize = VAULT_CHUNK_SIZE, size;
   char path[MAXNAMLEN + 1];
+  FILE *fp;
 
   snprintf(path, sizeof(path), "%s/%s%s", packagePath, packageName, packageExtension[packageType]);
+
+clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tse);
+printf("1. Path gen: %.3fms\n", (tse.tv_nsec-tss.tv_nsec)/1000000.f);
+clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tss);
+
   struct zip_t *zip = zip_open(path, 0, 'r');
+
+clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tse);
+printf("2. Open ZIP: %.3fms\n", (tse.tv_nsec-tss.tv_nsec)/1000000.f);
+clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tss);
+
   for (int resourceType = 0; resourceType < RESOURCE_TYPE_COUNT; resourceType++) {
+    int headercrc = crc32(0, (const mz_uint8*)resourceFileHeader[resourceType], RESOURCE_HEADER_SIZE - RESOURCE_HEADER_LENGTH_SIZE);
     fs_dir dir = fs_dir(resourcePath[resourceType], resourceFileExtension[resourceType]);
+
+clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tse);
+printf("3. DIR open: %.3fms\n", (tse.tv_nsec-tss.tv_nsec)/1000000.f);
+clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tss);
+
     for (int index = 0; index < resourceTypeCount[resourceType]; ++index) {
       if (zip_entry_open(zip, getBinFileName(path, index, resourceType)) < 0)
         continue;
+
+clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tse);
+printf("4. Open ZIP entry: %.3fms\n", (tse.tv_nsec-tss.tv_nsec)/1000000.f);
+clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tss);
+
       size = zip_entry_size(zip);
-      if (!buf || bufsize < (size + RESOURCE_HEADER_SIZE + RESOURCE_HEADER_CRC_SIZE)) {
-          free(buf);
-          bufsize = size + RESOURCE_HEADER_SIZE + RESOURCE_HEADER_CRC_SIZE;
-          buf = (char*)malloc(bufsize);
-          memcpy(buf, resourceFileHeader[resourceType], RESOURCE_HEADER_SIZE - RESOURCE_HEADER_LENGTH_SIZE);
-          memcpy(buf + RESOURCE_HEADER_SIZE - RESOURCE_HEADER_LENGTH_SIZE, &size, RESOURCE_HEADER_LENGTH_SIZE);
-      }
-      zip_entry_noallocread(zip, (void *)(buf + RESOURCE_HEADER_SIZE), size);
-      int crc = crc32(0, (const mz_uint8*)buf, bufsize - RESOURCE_HEADER_CRC_SIZE);
-      memcpy(buf + bufsize - RESOURCE_HEADER_CRC_SIZE, &crc, RESOURCE_HEADER_CRC_SIZE);
+
+//      if (!buf || bufsize < (size + RESOURCE_HEADER_SIZE + RESOURCE_HEADER_CRC_SIZE)) {
+//          free(buf);
+//          bufsize = size + RESOURCE_HEADER_SIZE + RESOURCE_HEADER_CRC_SIZE;
+//          buf = (char*)malloc(bufsize);
+//          memcpy(buf, resourceFileHeader[resourceType], RESOURCE_HEADER_SIZE - RESOURCE_HEADER_LENGTH_SIZE);
+//          memcpy(buf + RESOURCE_HEADER_SIZE - RESOURCE_HEADER_LENGTH_SIZE, &size, RESOURCE_HEADER_LENGTH_SIZE);
+//      }
+//      zip_entry_noallocread(zip, (void *)(buf + RESOURCE_HEADER_SIZE), size);
+
+      size_t pos = 0;
+      int crc;
+      size_t firstchunksize = size < VAULT_CHUNK_SIZE ? size : VAULT_CHUNK_SIZE;
+      zip_entry_noallocreadwithoffset(zip, pos, firstchunksize, buf);
+
+      crc = crc32(headercrc, (const mz_uint8*)&size, RESOURCE_HEADER_LENGTH_SIZE);
+      crc = crc32(crc, (const mz_uint8*)buf, firstchunksize);
+
       int dir_index = index + offset;
       char *resourceFileName = getResourceFileName(buf, dir_index, resourceType);
       snprintf(path, sizeof(path), "%s/%s", resourcePath[resourceType], resourceFileName);
-      FILE *fp = fopen(path, "wb");
-      if (fp) {
-        total_write += fwrite(buf, 1, bufsize, fp);
-        fclose(fp);
+
+clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tse);
+printf("5.\tRead 1st chunk: %.3fms\n", (tse.tv_nsec-tss.tv_nsec)/1000000.f);
+clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tss);
+
+#ifndef VAULT_WRITE_DISABLE
+      if ((fp = fopen(path, "wb")) == NULL) {
+        zip_entry_close(zip);
+        continue;
+      }
+#endif
+
+clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tse);
+printf("6.\tFile open: %.3fms\n", (tse.tv_nsec-tss.tv_nsec)/1000000.f);
+clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tss);
+
+#ifndef VAULT_WRITE_DISABLE
+      fwrite(resourceFileHeader[resourceType], 1, RESOURCE_HEADER_SIZE - RESOURCE_HEADER_LENGTH_SIZE, fp);
+      fwrite(&size, 1, RESOURCE_HEADER_LENGTH_SIZE, fp);
+      fwrite(buf, 1, firstchunksize, fp);
+
+clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tse);
+printf("7.\tFile write 1st chunk: %.3fms\n", (tse.tv_nsec-tss.tv_nsec)/1000000.f);
+clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tss);
+#endif
+
+      size -= firstchunksize;
+      pos += firstchunksize;
+
+      while ((int)size >= VAULT_CHUNK_SIZE) {
+        zip_entry_noallocreadwithoffset(zip, pos, VAULT_CHUNK_SIZE, buf);
+        crc = crc32(crc, (const mz_uint8*)buf, VAULT_CHUNK_SIZE);
+        size -= VAULT_CHUNK_SIZE;
+        pos += VAULT_CHUNK_SIZE;
+#ifndef VAULT_WRITE_DISABLE
+        fwrite(buf, 1, VAULT_CHUNK_SIZE, fp);
+#endif
+clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tse);
+printf("7.\tProcess next chunk: %.3fms\n", (tse.tv_nsec-tss.tv_nsec)/1000000.f);
+clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tss);
+      }
+
+      if ((int)size > 0) {
+        zip_entry_noallocreadwithoffset(zip, pos, size, buf);
+        crc = crc32(crc, (const mz_uint8*)buf, size);
+#ifndef VAULT_WRITE_DISABLE
+        fwrite(buf, 1, size, fp);
+
+#endif
+      }
+      fwrite(&crc, 1, RESOURCE_HEADER_CRC_SIZE, fp);
+
+clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tse);
+printf("8.\tProcess last chunk: %.3fms\n", (tse.tv_nsec-tss.tv_nsec)/1000000.f);
+clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tss);
+
+/*
+clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tse);
+printf("4.\tRead ZIP entry: %.3fms\n", (tse.tv_nsec-tss.tv_nsec)/1000000.f);
+clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tss);
+
+      int crc = crc32(0, (const mz_uint8*)buf, bufsize - RESOURCE_HEADER_CRC_SIZE-16);
+      crc = crc32(crc, (const mz_uint8*)buf + bufsize - RESOURCE_HEADER_CRC_SIZE-16, 16);
+      memcpy(buf + bufsize - RESOURCE_HEADER_CRC_SIZE, &crc, RESOURCE_HEADER_CRC_SIZE);
+
+      int dir_index = index + offset;
+      char *resourceFileName = getResourceFileName(buf, dir_index, resourceType);
+
+clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tse);
+printf("4.\tСRC32: %.3fms\n", (tse.tv_nsec-tss.tv_nsec)/1000000.f);
+clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tss);
+
+      snprintf(path, sizeof(path), "%s/%s", resourcePath[resourceType], resourceFileName);
+
+#ifndef VAULT_WRITE_DISABLE
+      if ((fp = fopen(path, "wb")) == NULL) {
+        zip_entry_close(zip);
+        continue;
+      }
+
+clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tse);
+printf("5.\tFile open: %.3fms\n", (tse.tv_nsec-tss.tv_nsec)/1000000.f);
+clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tss);
+
+      total_write += fwrite(buf, 1, bufsize, fp);
+
+clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tse);
+printf("6.\tFile write: %.3fms\n", (tse.tv_nsec-tss.tv_nsec)/1000000.f);
+clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tss);
+*/
+#ifndef VAULT_WRITE_DISABLE
+      fclose(fp);
+#endif
+
+      zip_entry_close(zip);
+
+clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tse);
+printf("9.\tFile and ZIP entry close: %.3fms\n", (tse.tv_nsec-tss.tv_nsec)/1000000.f);
+clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tss);
+
 #ifdef UNIT_TARGET_PLATFORM_MICROKORG2
 //correct mk2 MODERN/FUTURE banks sorting
         if (dir_index >= BANK_SIZE && dir_index < BANK_SIZE * 2)
@@ -321,16 +571,21 @@ size_t vault_import(const char *packageName, int packageType, int *resourceTypeC
         else if (dir_index >= BANK_SIZE * 2 && dir_index < BANK_SIZE * 3)
           dir_index -= BANK_SIZE;
 #endif      
-        if (dir_index < dir.count && strcmp(dir.names[dir_index], resourceFileName)) {
-          snprintf(path, sizeof(path), "%s/%s", resourcePath[resourceType], dir.names[dir_index]);
-          remove(path);
-          dir.remove(dir_index);
-        }
+      if (dir_index < dir.count && strcmp(dir.names[dir_index], resourceFileName)) {
+        snprintf(path, sizeof(path), "%s/%s", resourcePath[resourceType], dir.names[dir_index]);
+        remove(path);
+        dir.remove(dir_index);
+clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tse);
+printf("6.\tFile remove: %.3fms\n", (tse.tv_nsec-tss.tv_nsec)/1000000.f);
+clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tss);
       }
-      zip_entry_close(zip);
     }
   }
-  free(buf);
+//  free(buf);
   zip_close(zip);
+
+clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tse);
+printf("10. All closed: %.3fms\n", (tse.tv_nsec-tss.tv_nsec)/1000000.f);
+clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tss);
   return total_write;
 }
