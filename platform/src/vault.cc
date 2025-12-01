@@ -14,9 +14,13 @@
 #include "logue_wrap.h"
 #include "logue_perf.h"
 #include "logue_fs.h"
+
+#define VAULT_COMPRESSION_LEVEL 1
+#define VAULT_CHUNK_SIZE 1024
+//#define VAULT_WRITE_DISABLE
 #include "vault.h"
 
-#define PASSTHROUGH
+//#define PASSTHROUGH
 
 enum {
   param_export_bank = 0U,
@@ -38,8 +42,6 @@ enum {
 enum {
   pending_none = 0U,
   pending_refresh,
-  pending_export,
-  pending_import,
 };
 
 #ifdef UNIT_TARGET_PLATFORM_DRUMLOGUE
@@ -58,6 +60,7 @@ static bool suspended;
 static int size;
 static int sizes[RESOURCE_TYPE_COUNT];
 static int offset;
+static vault v;
 
 __unit_callback int8_t unit_init(const unit_runtime_desc_t * desc) {
   if (!desc)
@@ -74,14 +77,11 @@ __unit_callback int8_t unit_init(const unit_runtime_desc_t * desc) {
   return k_unit_err_none;
 }
 
-__unit_callback void __attribute__((optimize("-O3"))) unit_render(const float * in, float * out, uint32_t frames) {
+__unit_callback void unit_render(const float * in, float * out, uint32_t frames) {
   (void)in;
   (void)out;
   (void)frames;
   PERFMON_START
-#ifdef PERFMON_ENABLE
-  size_t total;
-#endif
 #ifdef PASSTHROUGH
 #if UNIT_INPUT_CHANNELS == 0
 __asm__ __volatile__(
@@ -151,23 +151,17 @@ __asm__ __volatile__(
     return;
 
   switch (pending) {
-    case pending_export:
-#ifdef PERFMON_ENABLE
-      total = 
-#endif
-      vault_export(package_name, Params[param_package_type], sizes, offset);
     case pending_refresh:
       package_list.refresh(package_prefix, package_suffix);
+      pending = pending_none;
       break;
-    case pending_import:
-#ifdef PERFMON_ENABLE
-      total = 
-#endif
-      vault_import(package_name, Params[param_package_type], sizes, offset);
+    default:
+      if (v.process() == vault_export_finished)
+        pending = pending_refresh;
       break;
   }
-  pending = pending_none;
-  PERFMON_END(total)
+
+  PERFMON_END(frames)
 }
 
 static char *gen_package_name(char *buf, size_t bufsize, char *prefix, int size, int offset, int resource_type) {
@@ -205,23 +199,23 @@ __unit_callback void unit_set_param_value(uint8_t index, int32_t value) {
   switch (index) {
     case param_export_run:
     case param_import_run:
-      if (pending != pending_none || value != unit_header.params[index].max)
+      if (v.state != vault_idle || value < unit_header.params[index].max)
         break;
 
       value = Params[index - param_export_run + param_export_bank];
-      if (value == 0)
+      if (value == 0) {
         break;
-      if (value == 1) {
+      } if (value == 1) {
         size = BANK_SIZE * BANK_COUNT;
         offset = 0;
 #ifdef UNIT_TARGET_PLATFORM_MICROKORG2
-      } else if (value > BANK_COUNT) {
-        value -= BANK_COUNT + 1;
+      } else if (value > BANK_COUNT + 1) {
+        value -= BANK_COUNT + 2;
         size = GENRE_SIZE;
         offset = value * GENRE_SIZE;
 #endif
       } else {
-        value--;
+        value -= 2;
         size = BANK_SIZE;
         offset = value * BANK_SIZE; 
       }
@@ -231,9 +225,9 @@ __unit_callback void unit_set_param_value(uint8_t index, int32_t value) {
         break;
 
 #if defined(UNIT_TARGET_PLATFORM_DRUMLOGUE)
-  resource_type = Params[index - param_export_run + param_export_data];
+      resource_type = Params[index - param_export_run + param_export_data];
 #elif defined(UNIT_TARGET_PLATFORM_MICROKORG2)
-  resource_type = resource_type_program;
+      resource_type = resource_type_program;
 #endif
 
       if (index == param_export_run && value == 0) {
@@ -241,17 +235,15 @@ __unit_callback void unit_set_param_value(uint8_t index, int32_t value) {
       } else {
         if (index == param_export_run)
           value--;
-        strncpy(package_name, package_list.names[value], strrchr(package_list.names[value], '.') - package_list.names[value]);
+        strncpy(package_name, package_list.get(value), strrchr(package_list.get(value), '.') - package_list.get(value));
       }
 
       for (int resourceType = 0; resourceType < RESOURCE_TYPE_COUNT; resourceType++)
         sizes[resourceType] = (resource_type == resourceType || resource_type == RESOURCE_TYPE_COUNT) ? size : 0;
 
-      pending = index == param_export_run ? pending_export : pending_import;
+      v.init(package_name, Params[param_package_type], sizes, offset, index == param_export_run ? vault_export_start : vault_import_start);
       break;
     case param_set_number:
-      if (pending == pending_none)
-        break;
       if (value == 0)
         package_prefix[0] = 0;
       else
@@ -259,8 +251,6 @@ __unit_callback void unit_set_param_value(uint8_t index, int32_t value) {
       pending = pending_refresh;
       break;
     case param_package_type:
-      if (pending != pending_none)
-        break;
       package_suffix = packageExtension[value];
       pending = pending_refresh;
       break;
@@ -270,7 +260,6 @@ __unit_callback void unit_set_param_value(uint8_t index, int32_t value) {
 __unit_callback const char * unit_get_param_str_value(uint8_t index, int32_t value) {
   PERFMON_VALUE(PARAM_COUNT - 1, index, value)
   static const char *packageType[] = {"Library", "Preset"};
-  static const char *runState[] = {"Run ->", "Exporting...", "Importing..."};
   static char s[16];
   switch (index) {
     case param_export_bank:
@@ -282,7 +271,7 @@ __unit_callback const char * unit_get_param_str_value(uint8_t index, int32_t val
 #ifdef UNIT_TARGET_PLATFORM_MICROKORG2
       } else if (value > BANK_COUNT + 1) {
         value -= BANK_COUNT + 2;
-        snprintf(s, sizeof(s), "%s %c", bankNames[value / BANK_SIZE], 'A' + (value & (GENRE_COUNT - 1)));
+        snprintf(s, sizeof(s), "%s %c", bankNames[value / GENRE_SIZE], 'A' + (value & (GENRE_COUNT - 1)));
       } else { 
         value -= 2;
         return bankNames[value];
@@ -299,12 +288,13 @@ __unit_callback const char * unit_get_param_str_value(uint8_t index, int32_t val
       value--;
     case param_import_file:
       if (value < package_list.count)
-        return package_list.names[value];
+        return package_list.get(value);
       break;
     case param_import_run:
     case param_export_run:
-      return runState[pending];
-      break;
+      if (v.state == vault_idle)
+        return "Go ->";
+      return "Working";
     case param_set_number:
       if (value == 0)
         return "All sets";

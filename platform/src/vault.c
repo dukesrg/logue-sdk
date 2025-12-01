@@ -33,13 +33,13 @@ const __unit_header UNIT_HEADER_TYPE unit_header = {
         {0, 2, 0, 0, k_unit_param_type_strings, 0, k_unit_param_frac_mode_fixed, RESERVED, {"Content"}},
 #endif
         {0, 127, 0, 0, k_unit_param_type_strings, 0, k_unit_param_frac_mode_fixed, RESERVED, {"File"}},
-        {0, 127, 0, 0, k_unit_param_type_strings, 0, k_unit_param_frac_mode_fixed, RESERVED, {"Export"}},
-        {0, 127, 0, 0, k_unit_param_type_strings, 0, k_unit_param_frac_mode_fixed, RESERVED, {"File"}},
+        {0, 10, 0, 0, k_unit_param_type_strings, 0, k_unit_param_frac_mode_fixed, RESERVED, {"Export"}},
+        {0, BANK_COUNT * (GENRE_COUNT + 1) + 1, 0, 0, k_unit_param_type_strings, 0, k_unit_param_frac_mode_fixed, RESERVED, {"Bank"}},
 #ifdef UNIT_TARGET_PLATFORM_DRUMLOGUE
         {0, 2, 0, 0, k_unit_param_type_strings, 0, k_unit_param_frac_mode_fixed, RESERVED, {"Content"}},
 #endif
-        {0, BANK_COUNT * (GENRE_COUNT + 1) + 1, 0, 0, k_unit_param_type_strings, RESERVED, k_unit_param_frac_mode_fixed, 0, {"Bank"}},
-        {0, 127, 0, 0, k_unit_param_type_strings, 0, k_unit_param_frac_mode_fixed, RESERVED, {"Import"}},
+        {0, 127, 0, 0, k_unit_param_type_strings, 0, k_unit_param_frac_mode_fixed, RESERVED, {"File"}},
+        {0, 10, 0, 0, k_unit_param_type_strings, 0, k_unit_param_frac_mode_fixed, RESERVED, {"Import"}},
         {0, 99, 0, 0, k_unit_param_type_strings, 0, k_unit_param_frac_mode_fixed, RESERVED, {"Set"}},
 #ifdef PERFMON_ENABLE
         PERFMON_PARAM,
