@@ -184,13 +184,6 @@ size_t getFileInfoContent(int *contentCounts, int packageType, char *buf, size_t
     packageType == package_type_lib ? " NumFavoriteData=\"1\"" :
 #endif
     "");
-#define PRESET_INFO_HEADER \
-"    <PresetInformation>\n" \
-"      <File>"
-#define PRESET_INFO_FILENAME "PresetInformation.xml"
-#define PRESET_INFO_FOOTER \
-"</File>\n" \
-"    </PresetInformation>\n"
       
     if (packageType == package_type_preset) {
     pos += snprintf(buf + pos, bufsize - pos,
@@ -238,13 +231,13 @@ enum {
   vault_export_write_binfile_next_chunk,
   vault_export_write_binfile_last_chunk,
   vault_export_close_binfile_entry,
-  vault_export_entry_next,//
+  vault_export_entry_next,
   vault_export_package_close,
   vault_export_finished,
   vault_import_start,
   vault_import_package_open,
   vault_import_dir_open,
-  vault_import_entry_open, //22
+  vault_import_entry_open,
   vault_import_entry_read_first_chunk,
   vault_import_entry_file_open,
   vault_import_entry_write_1st_chunk,
@@ -252,7 +245,7 @@ enum {
   vault_import_entry_process_last_chunk,
   vault_import_entry_close,
   vault_import_entry_remove_duplicate,
-  vault_import_entry_next,//
+  vault_import_entry_next,
   vault_import_package_close,
   vault_import_finished
 };
@@ -371,12 +364,6 @@ struct vault {
         getInfoFileName(path, resourceIndex, resourceType);
         zip_entry_open(zip, path);
         zip_entry_write(zip, resourceInfoFileContent[resourceType], strlen(resourceInfoFileContent[resourceType]));
-//  zip_entry_write(zip, &dir.count, sizeof(dir.count));
-//  zip_entry_write(zip, &resourceIndex, sizeof(resourceIndex));
-//  zip_entry_write(zip, resourcePath[resourceType], strlen(resourcePath[resourceType]));
-//  zip_entry_write(zip, resourceFileExtension[resourceType], strlen(resourceFileExtension[resourceType]));
-//  if (resourceIndex < dir.count)
-//    zip_entry_write(zip, dir.get(resourceIndex), strlen(dir.get(resourceIndex)));
         zip_entry_close(zip);
         break;
       case vault_export_read_binfile:
