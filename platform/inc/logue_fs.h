@@ -13,49 +13,51 @@
 #include <stdlib.h>
 #include <string.h>
 #include <dirent.h>
+#include <thread>
 
 struct fs_dir {
-  static fs_dir *self;
   int count;
-  char **names;
+  struct dirent **dirlist;
   const char *path;
   struct {
     const char *prefix;
     const char *suffix;
   } filter;
 
-  static int flt(const struct dirent *entry) {
-    return entry->d_type == DT_REG
-      && (self->filter.prefix == NULL || strncmp(entry->d_name, self->filter.prefix, strlen(self->filter.prefix)) == 0)
-      && (self->filter.suffix == NULL || strcmp(entry->d_name + strlen(entry->d_name) - strlen(self->filter.suffix), self->filter.suffix) == 0);
+  static const fs_dir *&self() {
+      static thread_local const fs_dir *ptr = nullptr;
+      return ptr;
   }
 
-  static int cmp(const struct dirent **a, const struct dirent **b) {
-    return strcmp((*a)->d_name, (*b)->d_name);
+  static int flt(const struct dirent *entry) {
+    const fs_dir *s = self();
+    return entry->d_type == DT_REG
+      && (s->filter.prefix == nullptr || strncmp(entry->d_name, s->filter.prefix, strlen(s->filter.prefix)) == 0)
+      && (s->filter.suffix == nullptr || strcmp(entry->d_name + strlen(entry->d_name) - strlen(s->filter.suffix), s->filter.suffix) == 0);
   }
 
   void cleanup() {
-    if (names)
-      for (; count; free(names[--count]));
-    free(names);
+    if (dirlist == nullptr)
+      return;
+    free(dirlist);
+    dirlist = nullptr;
+  }
+
+  char *get(int index) {
+    return dirlist[index]->d_name;
   }
 
   void remove(int index) {
     for (; index < count - 1; index++)
-      names[index] = names[index + 1];
+      dirlist[index] = dirlist[index + 1];
     count--;
   }
 
   void refresh() {
-    struct dirent **dirlist;
     cleanup();
-    count = scandir(path, &dirlist, flt, cmp);
-    names = (char **)malloc(sizeof(char *) * count); 
-    if (count && names)
-      for (int i = 0; i < count; i++)
-        names[i] = strdup(dirlist[i]->d_name);
-    for (int i = 0; i < count; free(dirlist[i++]));
-    free(dirlist);
+    self() = this;
+    count = scandir(path, &dirlist, flt, alphasort);
+    self() = nullptr;
   }
 
   void refresh(const char *suffix) {
@@ -70,8 +72,7 @@ struct fs_dir {
   }
 
   void init() {
-    self = this;
-    names = NULL;
+    dirlist = nullptr;
     refresh();
   }
 
@@ -79,7 +80,7 @@ struct fs_dir {
     init();
   }
 
-  fs_dir(const char *pth, const char *sfx) : path(pth), filter({.prefix = NULL, .suffix = sfx}) {
+  fs_dir(const char *pth, const char *sfx) : path(pth), filter({.prefix = nullptr, .suffix = sfx}) {
     init();
   }
 
@@ -87,8 +88,10 @@ struct fs_dir {
     init();
   }
 
+  fs_dir() : dirlist(nullptr), filter({.prefix = nullptr, .suffix = nullptr}) {}
+
   ~fs_dir() {
     cleanup();
   }
 
-} *fs_dir::self = nullptr;
+};
