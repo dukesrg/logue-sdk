@@ -356,9 +356,11 @@ struct vault {
         resourceType = 0;
         break;
       case vault_export_dir_open:
+        resourceIndex = 0;
+        if (resourceTypeCount[resourceType] == 0)
+          return state = vault_export_entry_next;
         dir.path = resourcePath[resourceType];
         dir.refresh(resourceFileExtension[resourceType]);
-        resourceIndex = 0;
         break;
       case vault_export_write_infofile:
         getInfoFileName(path, resourceIndex, resourceType);
@@ -419,10 +421,12 @@ struct vault {
         resourceType = 0;
         break;
       case vault_import_dir_open:
+        resourceIndex = 0;
+        if (resourceTypeCount[resourceType] == 0)
+          return state = vault_import_entry_next;
         headerCrc = crc32(0, (const mz_uint8*)resourceFileHeader[resourceType], RESOURCE_HEADER_SIZE - RESOURCE_HEADER_LENGTH_SIZE);
         dir.path = resourcePath[resourceType];
         dir.refresh(resourceFileExtension[resourceType]);
-        resourceIndex = 0;
         break;
       case vault_import_entry_open:
         if (zip_entry_open(zip, getBinFileName(path, resourceIndex, resourceType)) < 0)
@@ -441,7 +445,6 @@ struct vault {
         break;
       case vault_import_entry_file_open:
 #ifndef VAULT_WRITE_DISABLE
-printf("%d %d %s\n", resourceType, resourceIndex, path);
         if ((fp = fopen(path, "wb")) != NULL)
           break;
         zip_entry_close(zip);
