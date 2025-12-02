@@ -70,6 +70,9 @@
 #ifndef RESOURCE_PATH
 #define RESOURCE_PATH "/var/lib/microkorgd/userfs/Programs"
 #endif
+#ifndef GLOBAL_PATH
+#define GLOBAL_PATH "/var/lib/microkorgd/userfs/Global/global.mk2glob"
+#endif
 #define RESOURCE_INFO_FILE_CONTENT "<" PRODUCT_NAME "_ProgramInformation/>"
 #define RESOURCE_INFO_FILE_NAME_TEMPLATE "Prog_%03d.prog_info"
 #define RESOURCE_BIN_FILE_NAME_TEMPLATES "Prog_%03d.prog_bin"
@@ -90,7 +93,18 @@
 #define GENRE_SIZE 8
 static const char *bankLetters = "CMFU";
 static const char *favoriteFileName = "FavoriteData.fav_data";
-static const char *favoriteFileContent = "<minilogue_Favorite/>";
+static const char *favoriteFileContentStub = "<minilogue_Favorite/>";
+static const char *favoriteFileContentHeader = \
+  "<minilogue_Favorite>\n" \
+  "  <Bank>\n";
+static const char *favoriteFileContentFooter = \
+  "  </Bank>\n" \
+  "</minilogue_Favorite>\n";
+static const char *favoriteFileContentEntry = "    <Data>%d</Data>\n";
+static const char *globalFilePath = GLOBAL_PATH;
+#define FAVORITE_COUNT 8
+static unsigned short favoriteData[FAVORITE_COUNT];
+static size_t favoriteOffset = 0xA0;
 #endif
 
 #define RESOURCE_HEADER_SIZE 16
@@ -236,6 +250,13 @@ enum {
   vault_export_finished,
   vault_import_start,
   vault_import_package_open,
+#ifdef UNIT_TARGET_PLATFORM_MICROKORG2
+  vault_import_favorite_open,
+  vault_import_favorite_read,
+  vault_import_favorite_close,
+  vault_import_favorite_scan,
+  vault_import_favorite_write,
+#endif
   vault_import_dir_open,
   vault_import_entry_open,
   vault_import_entry_read_first_chunk,
@@ -349,7 +370,20 @@ struct vault {
 #ifdef UNIT_TARGET_PLATFORM_MICROKORG2
         else if (packageType == package_type_lib) {
           zip_entry_open(zip, favoriteFileName);
-          zip_entry_write(zip, favoriteFileContent, strlen(favoriteFileContent));
+          if (resourceTypeCount[0] != BANK_SIZE * BANK_COUNT
+            || (fp = fopen(globalFilePath, "rb")) == NULL
+            || fseek(fp, favoriteOffset, SEEK_SET) != 0
+            || fread(favoriteData, 1, sizeof(favoriteData), fp) != sizeof(favoriteData)
+            || fclose(fp) != 0
+          ) {
+            pos = snprintf(buf, bufsize, "%s", favoriteFileContentStub);
+          } else {
+            pos = snprintf(buf, bufsize, "%s", favoriteFileContentHeader);
+            for (int i = 0; i < FAVORITE_COUNT; i++)
+              pos += snprintf(buf + pos, bufsize - pos, favoriteFileContentEntry, favoriteData[i]);
+            pos += snprintf(buf + pos, bufsize - pos, "%s", favoriteFileContentFooter);
+          }
+          zip_entry_write(zip, buf, pos);
           zip_entry_close(zip);
         }
 #endif
@@ -384,7 +418,7 @@ struct vault {
         snprintf(path, MAXNAMLEN + 1, "%s/%s", resourcePath[resourceType], dir.get(dir_index));
         if ((fp = fopen(path, "rb")) == NULL
           || fstat(fileno(fp), &st) != 0
-          || st.st_size != (int)fread(buf, 1, st.st_size, fp)
+          || fread(buf, 1, st.st_size, fp) != (size_t)st.st_size
           || fclose(fp) != 0
         )
           break;
@@ -420,6 +454,39 @@ struct vault {
         zip = zip_open(path, 0, 'r');
         resourceType = 0;
         break;
+#ifdef UNIT_TARGET_PLATFORM_MICROKORG2
+      case vault_import_favorite_open:
+        if (packageType != package_type_lib
+          || resourceTypeCount[0] != BANK_SIZE * BANK_COUNT
+          || zip_entry_open(zip, favoriteFileName) < 0
+        )
+          return state = vault_import_dir_open;
+        break;
+      case vault_import_favorite_read:
+        size = zip_entry_noallocread(zip, buf, bufsize);
+        break;
+      case vault_import_favorite_close:
+        zip_entry_close(zip);
+        break;
+      case vault_import_favorite_scan:
+        if (size <= 0)
+          return state = vault_import_dir_open;
+        pos = 0;
+        for (int i = 0; i < FAVORITE_COUNT; i++) {
+          if (sscanf(buf + pos, "%*[^0-9]%hu%zn", &favoriteData[i], &size) != 1)
+            return state = vault_import_dir_open;
+          pos += size;
+        }
+        break;
+      case vault_import_favorite_write:
+        if ((fp = fopen(globalFilePath, "r+b")) == NULL
+          || fseek(fp, favoriteOffset, SEEK_SET) != 0
+          || fwrite(favoriteData, 1, sizeof(favoriteData), fp) != sizeof(favoriteData)
+          || fclose(fp) != 0
+        )
+          return state = vault_import_dir_open;
+        break;
+#endif
       case vault_import_dir_open:
         resourceIndex = 0;
         if (resourceTypeCount[resourceType] == 0)
