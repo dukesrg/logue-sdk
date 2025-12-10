@@ -36,17 +36,28 @@ enum
 
 enum
 {
-  kModDest1 = 0,
-  kModDest2,
-  kModDest3,
-  kModDest4,
-  kModDest5,
-  kModDest6,
-  kModDest7,
-  kModDest8,
-  kModDest9,
-  kModDest10,
-  kNumModDest
+  kMk2ModDest1 = 0,
+  kMk2ModDest2,
+  kMk2ModDest3,
+  kMk2ModDest4,
+  kMk2ModDest5,
+  kMk2ModDest6,
+  kMk2ModDest7,
+  kMk2ModDest8,
+  kMk2ModDest9,
+  kMk2ModDest10,
+  kNumMk2ModDest
+};
+
+enum
+{
+  kMk2ModSource1 = 0,
+  kMk2ModSource2,
+  kMk2ModSource3,
+  kMk2ModSource4,
+  kMk2ModSource5,
+  kMk2ModSource6,
+  kNumMk2ModSrc
 };
 
 enum

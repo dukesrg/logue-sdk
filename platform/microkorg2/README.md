@@ -8,7 +8,7 @@ This directory contains all source files needed to build custom oscillators and 
 
 #### Compatibility Notes
 
-Firmware version >= 2.0.0 is required to run user units built with SDK version 2.0.0.
+Firmware version >= 2.0.0 is required to run user units built with SDK version 2.1.0.
 
 #### Directory Structure:
 
@@ -247,7 +247,7 @@ Field descriptions:
  * `.dev_id` : A unique developer identifier as a low endian 32-bit unsigned integer. See [Developer Identifier](#developer-identifier) for details.
  * `.unit_id` : An identifier for the unit itself as a low endian 32-bit unsigned integer. This identifier must only be unique within the scope of a given developer identifier.
  * `.version` : The version for the current unit as a low endian 32-bit unsigned integer, with major in the upper 16 bits, minor and patch number in the two lower bytes, respectively. (e.g.: v1.2.3 -> 0x00010203U)
- * `.name` : Name for the current unit, as displayed on the device when loaded. Nul-terminated array of maximum 8 7-bit ASCII characters. Valid characters are: "` ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._`".
+ * `.name` : Name for the current unit, as displayed on the device when loaded. Nul-terminated array of maximum 8 7-bit ASCII characters. Valid characters are: "`` ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._!"#$%&'()*+,/:;<=>?@[]^`~``".
  * `.num_params` : Number of exposed parameters by the unit. This value depends on the target module. Refer to UNIT\_XXX\_MAX\_PARAM\_COUNT in common headers for exact value, where XXX is the target module.
  * `.params` : Array of parameter descriptors. See [Parameter Descriptors](#parameter-descriptors) for details. 
  
@@ -287,7 +287,7 @@ Field descriptions:
  * `frac` allows to specify the fractional part of the parameter value. This value will be interpreted as number of fractional bits or decimals depending on the `frac_mode` value.
  * `frac_mode` determines the type of fractional value being described. When set to `0`, values will be assumed to be fixed point with the lower `frac` bits representing the fractional part. When set to `1`, values will be assumed to include a fractional part that is multiplied by 10 times `frac` number of decimals, allowing for base 10 fractional increment/decrements.
  * `reserved` should be set to 0 at all times.
- * `name` allows for a 8 character name. Should be nul-terminated and 7-bit ASCII encoded. Valid characters are: "` ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._`".
+ * `name` allows for a 8 character name. Should be nul-terminated and 7-bit ASCII encoded. Valid characters are: "`` ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._!"#$%&'()*+,/:;<=>?@[]^`~``".
  
  *Note* `min`, `max`, `center` and `init` values must take into account the `frac` and `frac_mode` values.
 
@@ -299,8 +299,25 @@ Field descriptions:
  
 ##### Oscillator Parameters
  
- Up to 13 parameters are accessible via the OSC1/2/3 pages. They are assigned in order from left to right, page 1 ~ 3
+ Up to 13 parameters are accessible via the OSC1/2/3 pages. They are assigned in order from left to right, page 1 ~ 3.
+
+### Oscillator modulation
+
+ Oscillators receive a buffer of data for each voice from up to six modulation sources (one per virtual patch assignment) once per frame, along with the depth values corresponding to each virtual patch assignment. These values can be accessed using the helper functions `GetModDepth` and `GetModData`. To access the modulation data, add `kMk2PlatformExclusiveModData` as a case in the `unit_platform_exclusive` function. To display a name for your custom modulation destination in the virtual patch, add `kMk2PlatformExclusiveModDestName` as a case in `unit_platform_exclusive` and write the name in the buffer provided by `GetModDestNameData`. 
+ Please be aware that multiple sources can be assigned to the same destination and the same source can be assigned to the same destination multiple times. All modulation data and depth values are normalized to -1 ~ 1.
+ See [vox](vox/vox.h) or [vox](waves/waves.h) for examples. 
  
+##### Effect Parameter Behavior
+
+ By default, the effect parameters match the behavior of the internal fx. This means that when changing fx, the current page 1 parameters will be applied to the target effect, while the page 2 parameters are completely independent. It also means that the three page 1 parameteters are available as modulation destinations in the virtual patch. Both of these behaviors can be controlled by changing the setting of the reserved parameter in the header, as described below.
+
+|                    Enum                      | Value |   Behavior   |
+|----------------------------------------------|-------|--------------|
+| kMk2FxParamModeBasic                         |     0 | The same as internal fx. Page 1 parameter values are copied from previously selected fx, and parameters are modulatable via the virtual patch. |
+| kMk2FxParamModeIgnoreKnobState               |     1 | Page 1 parameter values are _not_ copied from the previously selected fx, and parameters are modulatable via the virtual patch. |
+| kMk2FxParamModeIgnoreModulation              |     2 | Page 1 parameter values are copied from the previously selected fx, and parameters are _not_ modulatable via the virtual patch. |
+| kMk2FxParamModeIgnoreKnobStateAndModulation  |     3 | Page 1 parameter values are _not_ copied from the previously selected fx, and parameters are _not_ modulatable via the virtual patch. |
+
 ##### Modulation Effect Parameters
  
  Up to 8 parameters are accessible via the MOD and EXTRA pages of the Mod fx. The three MOD parameters can be modulated via the virtual patch, and will inherit the parameter values of the previously selected effect (the same behavior as the internal effects) unless otherwise specified by the "reserved" bit in the header. The kMk2FxParamModeXX enums in FxDefines.h can be used to make this configuration more transparent.
@@ -312,6 +329,7 @@ Field descriptions:
 ##### Reverb Effect Parameters
  
  Up to 8 parameters are accessible via the REVERB and EXTRA pages of the Reverb fx. The three REVERB parameters can be modulated via the virtual patch, and will inherit the parameter values of the previously selected effect (the same behavior as the internal effects) unless otherwise specified by the "reserved" bit in the header. The kMk2FxParamModeXX enums in FxDefines.h can be used to make this configuration more transparent.
+
 
 #### Parameter Types
 
@@ -422,40 +440,52 @@ Other module runtimes do not provide specific realtime information.
 
 ### Strings
 
- Strings provided via `unit_get_param_str_value(..)` should be nul terminated C character arrays of 7-bit ASCII characters from the following list: "` ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._`".
+ Strings provided via `unit_get_param_str_value(..)` should be nul terminated C character arrays of 7-bit ASCII characters from the following list: "`` ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._!"#$%&'()*+,/:;<=>?@[]^`~``".
 
 #### Oscillator Output
  For efficiency, the microKORG2 runs one oscillator instance per timbre and expects the output to be written into the provided buffer as interlaced data. The number of voices expected, buffer location, and interlacing are all defined by the data provided in the oscillator runtime context. There are helper functions `write_oscillator_output_x1`/`write_oscillator_output_x2`/`write_oscillator_output_x4` and `GetBufferOffset` that handle the necessary calculations and writing. See `waves.h` or `vox.h` for examples. 
 
  The microKORG2 has a maximum of eight voices, processed with as much parallelization as possible. However, depending on settings like Timbre Mode and Vocoder on/off the maximum number of voices can change, in turn affecting how each voice is interlaced. The chart below describes this behavior in detail.
 
- # Single Timbre | Vocoder Off | Hard Tune/Harmonizer Off
+##### Single Timbre | Vocoder Off | Hard Tune/Harmonizer Off
  8 voices, interlaced in groups of 4
- Voices 0 ~ 3 : bufferOffset =   0 | voiceOffset = 0 | voiceLimit = 8 | outputStride = 4
- Voices 5 ~ 7 : bufferOffset = 256 | voiceOffset = 0 | voiceLimit = 8 | outputStride = 4
+| Timbre | Voices | bufferOffset | voiceOffset | voiceLimit | outputStride |
+|--------|--------|--------------|-------------|------------|--------------|
+| 1      | 0 ~ 3  | 0            | 0           | 8          | 4            |
+| 1      | 5 ~ 7  | 256          | 0           | 8          | 4            |
 
- # Dual Timbre | Vocoder Off | Hard Tune/Harmonizer Off
+##### Dual Timbre | Vocoder Off | Hard Tune/Harmonizer Off
  8 voices, interlaced in groups of 4
- Voices 0 ~ 3 : bufferOffset =   0 | voiceOffset = 0 | voiceLimit = 4 | outputStride = 4
- Voices 5 ~ 7 : bufferOffset = 256 | voiceOffset = 0 | voiceLimit = 4 | outputStride = 4
+| Timbre | Voices | bufferOffset | voiceOffset | voiceLimit | outputStride |
+|--------|--------|--------------|-------------|------------|--------------|
+| 1      | 0 ~ 3  | 0            | 0           | 4          | 4            |
+| 2      | 5 ~ 7  | 256          | 0           | 4          | 4            |
 
- # Single Timbre | Vocoder On / Keyboard Mode | Hard Tune/Harmonizer Off
+##### Single Timbre | Vocoder On / Keyboard Mode | Hard Tune/Harmonizer Off
  4 voices, interlaced in groups of 4
- Voices 0 ~ 3 : bufferOffset =   0 | voiceOffset = 0 | voiceLimit = 4 | outputStride = 4
+| Timbre | Voices | bufferOffset | voiceOffset | voiceLimit | outputStride |
+|--------|--------|--------------|-------------|------------|--------------|
+| 1      | 0 ~ 3  | 0            | 0           | 4          | 4            |
 
- # Dual Timbre | Vocoder On / Keyboard Mode | Hard Tune/Harmonizer Off
+##### Dual Timbre | Vocoder On / Keyboard Mode | Hard Tune/Harmonizer Off
  4 voices, interlaced in groups of 2
- Voices 0 ~ 1 : bufferOffset =   0 | voiceOffset = 0 | voiceLimit = 2 | outputStride = 4
- Voices 2 ~ 3 : bufferOffset =   0 | voiceOffset = 2 | voiceLimit = 2 | outputStride = 4
+| Timbre | Voices | bufferOffset | voiceOffset | voiceLimit | outputStride |
+|--------|--------|--------------|-------------|------------|--------------|
+| 1      | 0 ~ 1  | 0            | 0           | 2          | 4            |
+| 2      | 2 ~ 3  | 0.           | 2           | 2          | 4            |
 
- # Single Timbre | Vocoder On / Scale Mode | Hard Tune/Harmonizer Off
+##### Single Timbre | Vocoder On / Scale Mode | Hard Tune/Harmonizer Off
  2 voices, interlaced in groups of 2
- Voices 0 ~ 1 : bufferOffset =   0 | voiceOffset = 0 | voiceLimit = 2 | outputStride = 2
+| Timbre | Voices | bufferOffset | voiceOffset | voiceLimit | outputStride |
+|--------|--------|--------------|-------------|------------|--------------|
+| 1      | 0 ~ 1  | 0            | 0           | 2          | 2            |
 
- # Dual Timbre | Vocoder On / Scale Mode | Hard Tune/Harmonizer Off
+##### Dual Timbre | Vocoder On / Scale Mode | Hard Tune/Harmonizer Off
  2 voices, interlaced in groups of 1
- Voice  0     : bufferOffset =   0 | voiceOffset = 0 | voiceLimit = 1 | outputStride = 2
- Voice  1     : bufferOffset =   0 | voiceOffset = 1 | voiceLimit = 1 | outputStride = 2
+| Timbre | Voices | bufferOffset | voiceOffset | voiceLimit | outputStride |
+|--------|--------|--------------|-------------|------------|--------------|
+| 1      | 0 ~ 1  | 0            | 0           | 1          | 2            |
+| 2      | 2 ~ 3  | 0            | 1           | 1          | 2            |
 
-# Any Timbre Setting | Vocoder N/A | Hard Tune/Harmonizer On
+##### Any Timbre Setting | Vocoder N/A | Hard Tune/Harmonizer On
  Oscillators are not processed when the Hard Tune or Harmonizer is on.
