@@ -771,30 +771,32 @@ __unit_callback void unit_platform_exclusive(uint8_t messageId, void * data, uin
   switch (messageId) {
     case kMk2PlatformExclusiveModData: {
       const mk2_mod_data_t *mod_data = (mk2_mod_data_t *)data;
-      const uint32_t timbre_idx = 0;
-//ToDo: TBC if voiceOffset must be respected
-//ToDo: TBC if timbre index must be respected
       switch (runtime_context->voiceLimit) {
         case kMk2MaxVoices:
-          vModPatches[0].val[0] = vmulq_n_f32(vld1q_f32(&mod_data->data[0]), mod_data->depth[timbre_idx][0]);
-          vModPatches[0].val[1] = vmulq_n_f32(vld1q_f32(&mod_data->data[4]), mod_data->depth[timbre_idx][0]);
-          vModPatches[1].val[0] = vmulq_n_f32(vld1q_f32(&mod_data->data[kMk2MaxVoices]), mod_data->depth[timbre_idx][1]);
-          vModPatches[1].val[1] = vmulq_n_f32(vld1q_f32(&mod_data->data[kMk2MaxVoices + 4]), mod_data->depth[timbre_idx][1]);
+          for (uint32_t i = 0; i < kNumMk2ModSrc; i++) {
+            if (mod_data->index[i] >= MOD_PATCHES_COUNT)
+              continue;
+            vModPatches[mod_data->index[i]].val[0] = vmulq_n_f32(vld1q_f32(&mod_data->data[i * kMk2MaxVoices]), mod_data->depth[i]);
+            vModPatches[mod_data->index[i]].val[1] = vmulq_n_f32(vld1q_f32(&mod_data->data[i * kMk2MaxVoices + 4]), mod_data->depth[i]);
+          }
           break;
         case kMk2HalfVoices:
-          vModPatches[0].val[0] = vmulq_n_f32(vld1q_f32(&mod_data->data[0]), mod_data->depth[timbre_idx][0]);
-          vModPatches[1].val[0] = vmulq_n_f32(vld1q_f32(&mod_data->data[kMk2HalfVoices]), mod_data->depth[timbre_idx][1]);
+          for (uint32_t i = 0; i < kNumMk2ModSrc; i++) {
+            if (mod_data->index[i] < MOD_PATCHES_COUNT)
+              vModPatches[mod_data->index[i]].val[0] = vmulq_n_f32(vld1q_f32(&mod_data->data[i * kMk2HalfVoices]), mod_data->depth[i]);
+          }
           break;
-        case kMk2QuarterVoices: {
-          float32x2x2_t data = vld2_f32(mod_data->data);
-          float32x2_t depth = vld1_f32(mod_data->depth[timbre_idx]);
-          vst2_f32((float *)vModPatches, (float32x2x2_t){data.val[0] * depth, data.val[1] * depth});
+        case kMk2QuarterVoices:
+          for (uint32_t i = 0; i < kNumMk2ModSrc; i++) {
+            if (mod_data->index[i] < MOD_PATCHES_COUNT)
+              vst1_f32((float *)&((float32x2_t *)vModPatches)[mod_data->index[i]], vmul_n_f32(vld1_f32(&mod_data->data[i * kMk2QuarterVoices]), mod_data->depth[i]));
+          }
           break;
-        }
         case kMk2SingleVoice: {
-          float32x2_t data = vld1_f32(mod_data->data);
-          float32x2_t depth = vld1_f32(mod_data->depth[timbre_idx]);
-          vst1_f32((float *)vModPatches, data * depth);
+          for (uint32_t i = 0; i < kNumMk2ModSrc; i++) {
+            if (mod_data->index[i] < MOD_PATCHES_COUNT)
+              ((float *)vModPatches)[mod_data->index[i]] = mod_data->data[i * kMk2SingleVoice] * mod_data->depth[i];
+          }
           break;
         }
       }
@@ -803,14 +805,9 @@ __unit_callback void unit_platform_exclusive(uint8_t messageId, void * data, uin
     case kMk2PlatformExclusiveModDestName: {
       mk2_mod_dest_name_t *mod_dest = (mk2_mod_dest_name_t *)data;
       if (mod_dest->index < MOD_PATCHES_COUNT)
-        strcpy(mod_dest->name, unit_header.params[mod_dest->index].name);
+        strncpy(mod_dest->name, unit_header.params[mod_dest->index].name, UNIT_PARAM_NAME_LEN);
       break;
     }  
-/*ToDo: TBC message purpose and data format
-    case kMk2PlatformExclusiveUserModSource:
-      mk2_user_mod_source_t *user_mod_source = (mk2_user_mod_source_t *)data;
-      break;
-*/
   }
 }
 #endif
