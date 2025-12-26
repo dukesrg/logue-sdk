@@ -65,6 +65,9 @@ const __unit_header UNIT_HEADER_TYPE unit_header = {
 #endif
 #endif
 #ifdef UNIT_TARGET_PLATFORM_MICROKORG2
+#ifdef WAVETABLE_FILE_SUPPORTED
+        {0, 127, 0, 0, k_unit_param_type_strings, 0, k_unit_param_frac_mode_fixed, 0, {"Wave"}},
+#endif
 #ifdef BPM_SYNC_SUPPORTED
         {0, 512, 0, 0, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {"XBPMSync"}},
 #ifdef PERFMON_ENABLE
@@ -76,7 +79,9 @@ const __unit_header UNIT_HEADER_TYPE unit_header = {
         {0, 0, 0, 0, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {""}},
         {0, 0, 0, 0, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {""}},
 #endif
+#ifndef WAVETABLE_FILE_SUPPORTED
         {0, 0, 0, 0, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {""}},
+#endif
         {0, 0, 0, 0, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {""}},
         {0, 0, 0, 0, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {""}},
 #endif
