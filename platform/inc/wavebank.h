@@ -112,7 +112,7 @@
   #define FORMAT_PREFIX "f32"
   #define DATA_TYPE float
   #define to_f32(a) (a)
-  #define to_q31(a) f31_to_q31(a)
+  #define to_q31(a) f32_to_q31(a)
   #define from_f32(a) (a)
   #define from_q31(a) q31_to_f32(a)
 #endif
