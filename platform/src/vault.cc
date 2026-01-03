@@ -84,7 +84,7 @@ __unit_callback void unit_render(const float * in, float * out, uint32_t frames)
   PERFMON_START
 #ifdef PASSTHROUGH
 #if UNIT_INPUT_CHANNELS == 0
-__asm__ __volatile__(
+__asm__ volatile(
   "veor q0, q0, q0\n"
   "veor q1, q1, q1\n"
   ".Lloop:\n"
@@ -100,7 +100,7 @@ __asm__ __volatile__(
   : "memory", "q0", "q1"
 );
 #elif UNIT_INPUT_CHANNELS == UNIT_OUTPUT_CHANNELS
-__asm__ __volatile__(
+__asm__ volatile(
   ".Lloop:\n"
   "pld [%0, #128]\n"
   "pld [%1, #128]\n"
@@ -119,7 +119,7 @@ __asm__ __volatile__(
   : "memory", "q0", "q1"
 );
 #elif defined(UNIT_TARGET_MODULE_MASTERFX)
-__asm__ __volatile__(
+__asm__ volatile(
   ".Lloop:\n"
   "pld [%0, #128]\n" 
   "pld [%1, #64]\n"    
