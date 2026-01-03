@@ -3,7 +3,7 @@
  *
  * Additional ARM opcodes.
  * 
- * 2020 (c) Oleg Burdaev
+ * 2020-2026 (c) Oleg Burdaev
  * mailto: dukesrg@gmail.com
  *
  */
@@ -111,3 +111,5 @@ int32_t ubfx(int32_t op1, int32_t op2, int32_t op3)
   __asm__ volatile ("ubfx %0, %1, %2, %3" : "=r" (result) : "r" (op1), "i" (op2), "i" (op3));
   return result;
 }
+
+#define prefetch_write(ptr, offset) __asm__ volatile (".arch_extension mp\n pldw [%0, %1]" : : "r" (ptr), "i" (offset) : "memory")
