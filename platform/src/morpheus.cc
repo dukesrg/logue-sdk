@@ -3,7 +3,7 @@
  *
  *  Morphing wavetable oscillator
  * 
- *  2020-2025 (c) Oleg Burdaev
+ *  2020-2026 (c) Oleg Burdaev
  *  mailto: dukesrg@gmail.com
  */
 
@@ -286,7 +286,7 @@ enum {
 #endif
 #endif
   param_num
-};  
+};
 
 #ifdef UNIT_TARGET_PLATFORM
 static int32_t Params[PARAM_COUNT];
@@ -340,8 +340,8 @@ static fast_inline void set_tempo(uint32_t tempo) {
 #ifdef WAVETABLE_FILE_SUPPORTED
 static fast_inline float *load_wavetable_data(uint32_t index) {
   float *wavetable_ptr = nullptr;
-  void *rawdata_ptr __attribute__((aligned(16))) = nullptr;
-  float *dst_ptr = nullptr;
+  void *rawdata_ptr = nullptr;
+  float * dst_ptr = nullptr;
   uint32_t rawdata_size = (uint32_t)-1;
   char path[MAXNAMLEN + 1];
   FILE * fp;
@@ -370,11 +370,15 @@ static fast_inline float *load_wavetable_data(uint32_t index) {
         if (fread(&fmt, sizeof(fmt_chunk_t), 1, fp) != 1
           || fmt.channels != 1
           || (fmt.format != WAVE_FORMAT_PCM && fmt.format != WAVE_FORMAT_FLOAT)
-        ) rawdata_size = (fmt.bitsPerSample >> 3) * SAMPLE_COUNT * WAVE_COUNT;
+        ) {
+          supported = false;
+          break;
+        }
+        rawdata_size = (fmt.bitsPerSample >> 3) * SAMPLE_COUNT * WAVE_COUNT;
 //ToDo: larger file support?
         break;
       case DATA_CHUNK_ID:
-        if (chunk.chunkSize < rawdata_size || (rawdata_ptr = malloc(rawdata_size)) == nullptr) {
+        if (chunk.chunkSize < rawdata_size || (rawdata_ptr = aligned_alloc(32, rawdata_size)) == nullptr) {
           supported = false;
           break;
         }
@@ -389,13 +393,16 @@ static fast_inline float *load_wavetable_data(uint32_t index) {
 #pragma GCC diagnostic ignored "-Wcast-align"
         wavetable_ptr = (float *)wave_bank;
 #pragma GCC diagnostic pop
+PERFMON_START
         switch (fmt.format) {
           case WAVE_FORMAT_PCM:
             switch (fmt.bitsPerSample) {
               case 8:
                 dst_ptr = wavetable_ptr;
-                for (uint8_t *src_ptr = (uint8_t *)rawdata_ptr; dst_ptr < wavetable_ptr + SAMPLE_COUNT * WAVE_COUNT; src_ptr += 16, dst_ptr += 16) {
-                  int8x16_t v_s8 = vreinterpretq_s8_u8(veorq_u8(vld1q_u8(src_ptr), vdupq_n_u8(0x80)));
+                __asm__ volatile (".p2align 5");
+                for (uint8_t *src_ptr = (uint8_t *)rawdata_ptr, *end_ptr = src_ptr + SAMPLE_COUNT * WAVE_COUNT; __builtin_expect(src_ptr < end_ptr, 1); src_ptr += 16, dst_ptr += 16) {
+                  int8x16_t v_s8 = vreinterpretq_s8_u8(veorq_u8(vld1q_u8((uint8_t *)__builtin_assume_aligned(src_ptr, 16)), vdupq_n_u8(0x80)));
+                  __builtin_prefetch(src_ptr + 128, 0, 3);
                   int16x8_t v_s16_l = vmovl_s8(vget_low_s8(v_s8));
                   int16x8_t v_s16_h = vmovl_s8(vget_high_s8(v_s8));
                   int32x4_t v_s32_1 = vmovl_s16(vget_low_s16(v_s16_l));
@@ -406,47 +413,87 @@ static fast_inline float *load_wavetable_data(uint32_t index) {
                   float32x4_t v_f32_2 = vcvtq_n_f32_s32(v_s32_2, 7);
                   float32x4_t v_f32_3 = vcvtq_n_f32_s32(v_s32_3, 7);
                   float32x4_t v_f32_4 = vcvtq_n_f32_s32(v_s32_4, 7);
-                  vst1q_f32(dst_ptr, v_f32_1);
-                  vst1q_f32(dst_ptr + 4, v_f32_2);
-                  vst1q_f32(dst_ptr + 8, v_f32_3);
-                  vst1q_f32(dst_ptr + 12, v_f32_4);
+                  vst1q_f32((float *)__builtin_assume_aligned(dst_ptr, 16), v_f32_1);
+                  vst1q_f32((float *)__builtin_assume_aligned(dst_ptr + 4, 16), v_f32_2);
+                  vst1q_f32((float *)__builtin_assume_aligned(dst_ptr + 8, 16), v_f32_3);
+                  vst1q_f32((float *)__builtin_assume_aligned(dst_ptr + 12, 16), v_f32_4);
                 }
                 break;
-              case 16:
+              case 16: {
                 dst_ptr = wavetable_ptr;
-                for (int16_t *src_ptr = (int16_t *)rawdata_ptr; dst_ptr < wavetable_ptr + SAMPLE_COUNT * WAVE_COUNT; src_ptr += 8, dst_ptr += 8) {
-                  int16x8_t v_q15 = vld1q_s16(src_ptr);
-                  int32x4_t v_q31_l = vmovl_s16(vget_low_s16(v_q15));
-                  int32x4_t v_q31_h = vmovl_s16(vget_high_s16(v_q15));
-                  float32x4_t v_f32_l = vcvtq_n_f32_s32(v_q31_l, 15);
-                  float32x4_t v_f32_h = vcvtq_n_f32_s32(v_q31_h, 15);
-                  vst1q_f32(dst_ptr, v_f32_l);
-                  vst1q_f32(dst_ptr + 4, v_f32_h);
+                __asm__ volatile (".p2align 5");
+                for (int16_t *src_ptr = (int16_t *)rawdata_ptr, *end_ptr = src_ptr + SAMPLE_COUNT * WAVE_COUNT; __builtin_expect(src_ptr < end_ptr, 1); src_ptr += 8, dst_ptr += 8) {
+                  int16x8_t v_q15_0 = vld1q_s16((int16_t *)__builtin_assume_aligned(src_ptr, 16));
+                  __builtin_prefetch(src_ptr + 72, 0, 3);
+                  int32x4_t v_q31_0 = vmovl_s16(vget_low_s16(v_q15_0));
+                  int32x4_t v_q31_1 = vmovl_s16(vget_high_s16(v_q15_0));
+                  float32x4_t v_f32_0 = vcvtq_n_f32_s32(v_q31_0, 15);
+                  float32x4_t v_f32_1 = vcvtq_n_f32_s32(v_q31_1, 15);
+                  vst1q_f32((float *)__builtin_assume_aligned(dst_ptr, 16), v_f32_0);
+                  vst1q_f32((float *)__builtin_assume_aligned(dst_ptr + 4, 16), v_f32_1);
                 }
+/*
+int16_t *src_ptr = (int16_t *)rawdata_ptr;
+int16_t *end_ptr = src_ptr + SAMPLE_COUNT * WAVE_COUNT;
+__asm__ volatile (".p2align 6");
+__asm__ volatile (
+  ".Lloop_%=:\n"
+  "vld1.16 {d16-d17}, [%[src]:128]!\n"
+  "vmovl.s16 q10, d16\n"
+  "vld1.16 {d18-d19}, [%[src]:128]!\n"
+//  "pld [%[src], #128]\n"
+  "vmovl.s16 q11, d17\n"
+  "cmp %[src], %[end]\n"
+  "vcvt.f32.s32 q10, q10, #15\n"
+  "vmovl.s16 q12, d18\n"
+  "vcvt.f32.s32 q11, q11, #15\n"
+  "vmovl.s16 q13, d19\n"
+  "vcvt.f32.s32 q12, q12, #15\n"
+  "vst1.32 {q10,q11}, [%[dst]:256]!\n"
+  "vcvt.f32.s32 q13, q13, #15\n"
+  "vst1.32 {q12,q13}, [%[dst]:256]!\n"
+  "blt .Lloop_%=\n"
+  : [src]"+r"(src_ptr), [dst]"+r"(dst_ptr)
+  : [end]"r"(end_ptr)
+  : "memory", "q8", "q9", "q10", "q11", "q12", "q13"
+);
+*/
+//__asm__ volatile ("nop\nnop\nnop\nnop\n");
                 break;
+              } 
               case 24:
                 dst_ptr = wavetable_ptr;
-                for (uint8_t *src_ptr = (uint8_t *)rawdata_ptr; dst_ptr < wavetable_ptr + SAMPLE_COUNT * WAVE_COUNT; src_ptr += 24, dst_ptr += 8) {
-                  uint8x8x3_t v_u8 = vld3_u8(src_ptr);
-                  int16x8_t v_s16_b2 = vmovl_s8(vreinterpret_s8_u8(v_u8.val[2]));                  
-                  uint16x8_t v_u16_b1 = vmovl_u8(v_u8.val[1]);
+                __asm__ volatile (".p2align 5");
+                for (uint8_t *src_ptr = (uint8_t *)rawdata_ptr, *end_ptr = src_ptr + SAMPLE_COUNT * WAVE_COUNT; __builtin_expect(src_ptr < end_ptr, 1); src_ptr += 24, dst_ptr += 8) {
+                  uint8x8x3_t v_u8 = vld3_u8((uint8_t *)__builtin_assume_aligned(src_ptr, 8));
+                  __builtin_prefetch(src_ptr + 144, 0, 3);
                   uint16x8_t v_u16_b0 = vmovl_u8(v_u8.val[0]);
-                  int32x4_t v_s32_l = vshll_n_s16(vget_low_s16(v_s16_b2), 16);
-                  int32x4_t v_s32_h = vshll_n_s16(vget_high_s16(v_s16_b2), 16);
-                  v_s32_l = vorrq_s32(v_s32_l, vreinterpretq_s32_u32(vshll_n_u16(vget_low_u16(v_u16_b1), 8)));
-                  v_s32_h = vorrq_s32(v_s32_h, vreinterpretq_s32_u32(vshll_n_u16(vget_high_u16(v_u16_b1), 8)));
-                  v_s32_l = vorrq_s32(v_s32_l, vreinterpretq_s32_u32(vmovl_u16(vget_low_u16(v_u16_b0))));
-                  v_s32_h = vorrq_s32(v_s32_h, vreinterpretq_s32_u32(vmovl_u16(vget_high_u16(v_u16_b0))));
+                  uint16x8_t v_u16_b1 = vmovl_u8(v_u8.val[1]);
+                  int16x8_t v_s16_b2 = vmovl_s8(vreinterpret_s8_u8(v_u8.val[2]));                  
+                  int32x4_t v_s32_0l = vreinterpretq_s32_u32(vmovl_u16(vget_low_u16(v_u16_b0)));
+                  int32x4_t v_s32_0h = vreinterpretq_s32_u32(vmovl_u16(vget_high_u16(v_u16_b0)));
+                  int32x4_t v_s32_1l = vreinterpretq_s32_u32(vshll_n_u16(vget_low_u16(v_u16_b1), 8));
+                  int32x4_t v_s32_1h = vreinterpretq_s32_u32(vshll_n_u16(vget_high_u16(v_u16_b1), 8));
+                  int32x4_t v_s32_2l = vshll_n_s16(vget_low_s16(v_s16_b2), 16);
+                  int32x4_t v_s32_2h = vshll_n_s16(vget_high_s16(v_s16_b2), 16);
+                  int32x4_t v_s32_l = vorrq_s32(v_s32_0l, v_s32_1l);
+                  int32x4_t v_s32_h = vorrq_s32(v_s32_0h, v_s32_1h);
+                  v_s32_l = vorrq_s32(v_s32_l, v_s32_2l);
+                  v_s32_h = vorrq_s32(v_s32_h, v_s32_2h);
                   float32x4_t v_f32_l = vcvtq_n_f32_s32(v_s32_l, 23);
                   float32x4_t v_f32_h = vcvtq_n_f32_s32(v_s32_h, 23);
-                  vst1q_f32(dst_ptr, v_f32_l);
-                  vst1q_f32(dst_ptr + 4, v_f32_h);
+                  vst1q_f32((float *)__builtin_assume_aligned(dst_ptr, 16), v_f32_l);
+                  vst1q_f32((float *)__builtin_assume_aligned(dst_ptr + 4, 16), v_f32_h);
                 }
                 break;
               case 32:
                 dst_ptr = wavetable_ptr;
-                for (int32_t *src_ptr = (int32_t *)rawdata_ptr; dst_ptr < wavetable_ptr + SAMPLE_COUNT * WAVE_COUNT; src_ptr += 4, dst_ptr += 4) {
-                  vst1q_f32(dst_ptr, vcvtq_n_f32_s32(vld1q_s32(src_ptr), 31));
+                __asm__ volatile (".p2align 5");
+                for (int32_t *src_ptr = (int32_t *)rawdata_ptr, *end_ptr = src_ptr + SAMPLE_COUNT * WAVE_COUNT; __builtin_expect(src_ptr < end_ptr, 1); src_ptr += 4, dst_ptr += 4) {
+                  int32x4_t v_q31_0 = vld1q_s32((int32_t *)__builtin_assume_aligned(src_ptr, 16));
+                  __builtin_prefetch(src_ptr + 32, 0, 3);
+                  float32x4_t v_f32_0 = vcvtq_n_f32_s32(v_q31_0, 31);
+                  vst1q_f32((float *)__builtin_assume_aligned(dst_ptr, 16), v_f32_0);
                 }
                 break;
               default:
@@ -457,7 +504,7 @@ static fast_inline float *load_wavetable_data(uint32_t index) {
           case WAVE_FORMAT_FLOAT:
             switch (fmt.bitsPerSample) {
               case 32:
-                memcpy(wavetable_ptr, rawdata_ptr, rawdata_size);
+                memcpy(__builtin_assume_aligned(wavetable_ptr, 32), __builtin_assume_aligned(rawdata_ptr, 32), rawdata_size);
                 break;
 //              case 64:
 //Will be too slow, convert file to float32 first
@@ -469,7 +516,9 @@ static fast_inline float *load_wavetable_data(uint32_t index) {
             break;
           default:
             wavetable_ptr = nullptr;
+            break;
         }
+PERFMON_END((SAMPLE_COUNT * WAVE_COUNT) >> 2)
         free(rawdata_ptr);
         break;
       default:
@@ -524,7 +573,7 @@ void OSC_CYCLE(const user_osc_param_t * const runtime_context, int32_t * out, co
 __unit_callback void unit_render(const float * in, float * out, uint32_t frames) {
   (void) in;
 #endif
-  PERFMON_START
+//  PERFMON_START
 #ifdef UNIT_TARGET_PLATFORM_MICROKORG2
 //ToDo: microKORG2 support
   float32x4x2_t vpitch = {vld1q_f32(&PITCH[0]), vld1q_f32(&PITCH[4])};
@@ -634,7 +683,7 @@ __unit_callback void unit_render(const float * in, float * out, uint32_t frames)
       }
     }
   }
-  PERFMON_END(frames)
+//  PERFMON_END(frames)
 }
 
 #ifdef UNIT_TARGET_MODULE_OSC
@@ -798,7 +847,7 @@ __unit_callback int32_t unit_get_param_value(uint8_t index) {
 
 __unit_callback const char * unit_get_param_str_value(uint8_t index, int32_t value) {
   PERFMON_VALUE(PARAM_COUNT - 1, index, value)
-  #ifdef UNIT_TARGET_PLATFORM_MICROKORG2
+#ifdef UNIT_TARGET_PLATFORM_MICROKORG2
   static const char *modes[] = {"{One shot", "{Key trigger", "{Random", "{Free run"};
   static char modename[25];
   static const char *dimensions[] = {"|64{X|Amp", "|64{X|Ring", "|64{X|Phase", "32 X 2", "16 X 4", "8 X 8", "4 X 16", "2 X 32", "|Amp{X|64", "|Ring{X|64", "|Phase{X|64"};
@@ -814,6 +863,10 @@ __unit_callback const char * unit_get_param_str_value(uint8_t index, int32_t val
   static const char *dimensions[] = {"64 A", "64 R", "64 P", "32 2", "16 4", "8 8", "4 16", "2 32", "A 64", "R 64", "P 64"};
   static const char *wfnames[] = {"Saw", "Tri", "Sqr", "Sin", "SnH"};
   static char wtnames[][5] = {"WT  ", "WA  ", "WB  ", "WC  ", "WD  ", "WE  ", "WF  "};
+#endif
+#ifdef WAVETABLE_FILE_SUPPORTED
+  static char filename[MAXNAMLEN + 1];
+  size_t filename_len;
 #endif
   static const uint8_t wfcounts[] = {WAVE_COUNT, 16, 16, 14, 13, 15, 16};
   static char *s;
@@ -886,8 +939,13 @@ __unit_callback const char * unit_get_param_str_value(uint8_t index, int32_t val
       return s;
 #ifdef WAVETABLE_FILE_SUPPORTED
     case param_wavetable_file_idx:
-      if (value < wavetable_file_list.count)
-        return wavetable_file_list.get(value);
+      if (value >= wavetable_file_list.count)
+        break;
+      s = wavetable_file_list.get(value);
+      filename_len = strrchr(s, '.') - s;
+      memcpy(filename, s, filename_len);
+      filename[filename_len] = 0;
+      return filename;
 #endif
   }
   return nullptr;
