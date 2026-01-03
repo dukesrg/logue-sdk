@@ -22,7 +22,7 @@
  * 
  * Warning, lookup functions are overloaded, please take care of the parameter types.
  * 
- * 2020-2025 (c) Oleg Burdaev
+ * 2020-2026 (c) Oleg Burdaev
  * mailto: dukesrg@gmail.com
  *
  */
@@ -117,6 +117,12 @@
   #define from_q31(a) q31_to_f32(a)
 #endif
 
+#ifdef __cortex_a7__
+  #define DATA_ALIGNMENT 32
+#else
+  #define DATA_ALIGNMENT __alignof__(DATA_TYPE)
+#endif
+
 #define STR_(s) #s
 #define STR(s) STR_(s)
 
@@ -206,9 +212,9 @@ static custom_data("Raw " FORMAT_NAME " waveform", SAMPLE_COUNT_TOTAL, WAVE_COUN
 #endif
 #endif
 #ifdef WAVEBANK
-  DATA_TYPE wave_bank[WAVE_COUNT * DATA_TYPE_COUNT] __attribute__((aligned(__alignof__(DATA_TYPE)))) = {WAVEBANK};
+  DATA_TYPE wave_bank[WAVE_COUNT * DATA_TYPE_COUNT] __attribute__((aligned(DATA_ALIGNMENT))) = {WAVEBANK};
 #else
-  uint8_t wave_bank[WAVE_COUNT * DATA_TYPE_COUNT * sizeof(DATA_TYPE)] __attribute__((aligned(__alignof__(DATA_TYPE)))) =
+  uint8_t wave_bank[WAVE_COUNT * DATA_TYPE_COUNT * sizeof(DATA_TYPE)] __attribute__((aligned(DATA_ALIGNMENT))) =
 #ifdef WAVEBANK_NO_HOOKS
   {0};
 #else
