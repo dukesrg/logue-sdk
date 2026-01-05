@@ -970,6 +970,12 @@ __unit_callback void unit_reset() {}
 __unit_callback void unit_resume() {}
 
 __unit_callback void unit_suspend() {}
+
+#ifdef WAVETABLE_FILE_SUPPORTED
+__unit_callback void unit_teardown() {
+  wavetable_file_list.cleanup();
+}
+#endif
 #endif
 
 #ifdef UNIT_TARGET_PLATFORM_NTS3_KAOSS

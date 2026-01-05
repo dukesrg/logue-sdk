@@ -317,6 +317,7 @@ __unit_callback int32_t unit_get_param_value(uint8_t index) {
 }
 
 __unit_callback void unit_teardown() {
+  package_list.cleanup();  
   pending = pending_none;
 }
 
