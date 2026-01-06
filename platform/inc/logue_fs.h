@@ -3,7 +3,7 @@
  *
  *  logue SDK 2.x file system utils 
  *
- *  2025 (c) Oleg Burdaev
+ *  2025-2026 (c) Oleg Burdaev
  *  mailto: dukesrg@gmail.com
  */
 
@@ -15,6 +15,10 @@
 #include <dirent.h>
 #include <thread>
 
+#ifndef MAXEXTLEN
+  #define MAXEXTLEN 3
+#endif
+
 struct fs_dir {
   int count;
   struct dirent **dirlist;
@@ -23,6 +27,7 @@ struct fs_dir {
     const char *prefix;
     const char *suffix;
   } filter;
+  char suffix_uc[MAXEXTLEN + 2];
 
   static const fs_dir *&self() {
       static thread_local const fs_dir *ptr = nullptr;
@@ -33,7 +38,10 @@ struct fs_dir {
     const fs_dir *s = self();
     return entry->d_type == DT_REG
       && (s->filter.prefix == nullptr || strncmp(entry->d_name, s->filter.prefix, strlen(s->filter.prefix)) == 0)
-      && (s->filter.suffix == nullptr || strcmp(entry->d_name + strlen(entry->d_name) - strlen(s->filter.suffix), s->filter.suffix) == 0);
+      && (s->filter.suffix == nullptr
+        || strcmp(entry->d_name + strlen(entry->d_name) - strlen(s->filter.suffix), s->filter.suffix) == 0
+        || strcmp(entry->d_name + strlen(entry->d_name) - strlen(s->suffix_uc), s->suffix_uc) == 0
+      );
   }
 
   void cleanup() {
@@ -62,6 +70,10 @@ struct fs_dir {
 
   void refresh(const char *suffix) {
     filter.suffix = suffix;
+    uint32_t i = 0;
+    while (i < (MAXEXTLEN + 1) && suffix != nullptr && *suffix != 0)
+      suffix_uc[i] = toupper(*suffix++);
+    suffix_uc[i] = 0;
     refresh();
   }
 
