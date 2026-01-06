@@ -626,6 +626,68 @@ __unit_callback void unit_render(const float * in, float * out, uint32_t frames)
   }
 
   if (s_mod_type != mod_type_none) {
+#ifdef UNIT_TARGET_PLATFORM_MICROKORG2
+    switch (runtime_context->voiceLimit) {
+      case kMk2MaxVoices:
+        __asm__ volatile (".p2align 5");
+        for (float
+          * __restrict out_p1 = (float *)__builtin_assume_aligned(out + runtime_context->voiceOffset, 16),
+          * __restrict out_p2 = out_p1 + frames * runtime_context->outputStride,
+          * out_e = out_p2
+          ; __builtin_expect(out_p1 < out_e, 1)
+          ; out_p1 += runtime_context->outputStride, out_p2 += runtime_context->outputStride
+        ) {
+          float32x4_t v_1;
+          float32x4_t v_2;
+
+          vst1q_f32(out_p1, v_1);
+          vst1q_f32(out_p2, v_2);
+        }
+        break;
+      case kMk2HalfVoices:
+        __asm__ volatile (".p2align 5");
+        for (float
+          * __restrict out_p1 = (float *)__builtin_assume_aligned(out + runtime_context->voiceOffset, 16),
+          * __restrict out_e = out_p1 + frames * runtime_context->outputStride
+          ; __builtin_expect(out_p1 < out_e, 1)
+          ; out_p1 += runtime_context->outputStride
+        ) {
+          float32x4_t v_1;
+
+          vst1q_f32(out_p1, v_1);
+        }
+        break;
+      case kMk2QuarterVoices:
+        __asm__ volatile (".p2align 5");
+        for (float
+          * __restrict out_p1 = (float *)__builtin_assume_aligned(out + runtime_context->voiceOffset, 8),
+          * __restrict out_e = out_p1 + frames * runtime_context->outputStride
+          ; __builtin_expect(out_p1 < out_e, 1)
+          ; out_p1 += runtime_context->outputStride
+        ) {
+          float32x2_t v_1;
+
+          vst1_f32(out_p1, v_1);
+        }
+        break;
+      case kMk2SingleVoice:
+        __asm__ volatile (".p2align 5");
+        for (float
+          * __restrict out_p1 = (float *)__builtin_assume_aligned(out + runtime_context->voiceOffset, 4),
+          * __restrict out_e = out_p1 + frames * 1
+          ; __builtin_expect(out_p1 < out_e, 1)
+          ; out_p1 += 1
+        ) {
+          float v_1;
+
+          *out_p1 = v_1;
+        }
+        break;
+    }
+#else
+
+#endif
+
     for (uint32_t stride_idx = 0; stride_idx < STRIDE_COUNT; stride_idx++) {
       out_p = out + stride_idx * STRIDE * (frames - 1);
       out_e = out_p + STRIDE * frames;
