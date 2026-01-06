@@ -20,6 +20,9 @@
 #define WAVE_COUNT 64
 #define WAVE_COUNT_X 8
 #define WAVE_COUNT_Y 8
+#ifdef UNIT_TARGET_PLATFORM_MICROKORG2
+#define WAVEBANK_ALLOCATE
+#endif
 #include "wavebank.h"
 
 #define WAVE_COUNT_EXP 6
@@ -391,7 +394,7 @@ static fast_inline float *load_wavetable_data(uint32_t index) {
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wcast-align"
-        wavetable_ptr = (float *)wave_bank;
+        wavetable_ptr = (float *)wavebank;
 #pragma GCC diagnostic pop
 PERFMON_START
         switch (fmt.format) {
@@ -555,6 +558,9 @@ __unit_callback int8_t unit_init(const unit_runtime_desc_t * desc) {
 #ifdef UNIT_OSC_H_
   runtime_context = (unit_runtime_osc_context_t *)desc->hooks.runtime_context;
 #endif
+#endif
+#ifdef UNIT_TARGET_PLATFORM_MICROKORG2
+  osc_wavebank_allocate();
 #endif
 #if LFO_WAVEFORM_COUNT == 159
   osc_wave_init_all();
@@ -971,11 +977,14 @@ __unit_callback void unit_resume() {}
 
 __unit_callback void unit_suspend() {}
 
-#ifdef WAVETABLE_FILE_SUPPORTED
 __unit_callback void unit_teardown() {
+#ifdef WAVETABLE_FILE_SUPPORTED
   wavetable_file_list.cleanup();
-}
 #endif
+#ifndef UNIT_TARGET_PLATFORM_MICROKORG2
+  osc_wavebank_free();
+#endif
+}
 #endif
 
 #ifdef UNIT_TARGET_PLATFORM_NTS3_KAOSS

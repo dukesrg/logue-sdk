@@ -14,6 +14,7 @@
  *   - FORMAT_FLOAT32: Single precision floating point
  * - SAMPLE_COUNT: samples per waveform, must be power of 2
  * - SAMPLE_GUARD: additional guard sample at the end of each waveform equal to starting sample for optimized output
+ * - WAVEBANK_ALLOCATE: dynamically allocate wavebank memory
  * - WAVEBANK_NO_HOOKS: do not place wavebank in .hooks section
  * - WAVE_COUNT: total number of waveforms in wavetable, must be power of 2
  * - for grid mode only
@@ -28,6 +29,8 @@
  */
 
 #pragma once
+
+#include <stdlib.h>
 
 #include "fixed_mathq.h"
 #include "g711_decode.h"
@@ -201,6 +204,7 @@
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wnarrowing"
+#ifndef WAVEBANK_ALLOCATE
 #ifdef WAVEBANK_NO_HOOKS
 static
 #else
@@ -221,9 +225,26 @@ static custom_data("Raw " FORMAT_NAME " waveform", SAMPLE_COUNT_TOTAL, WAVE_COUN
  "WAVEBANK" FORMAT_PREFIX "x" STR(WAVE_COUNT) "x" STR(SAMPLE_COUNT_TOTAL);
 #endif
 #endif
+#endif
 #pragma GCC diagnostic pop
 
-static DATA_TYPE *wavebank = (DATA_TYPE*)(void*)wave_bank;
+static DATA_TYPE *wavebank =
+#ifndef WAVEBANK_ALLOCATE 
+  (DATA_TYPE*)(void*)wave_bank;
+#else
+  nullptr;
+
+static inline __attribute__((always_inline, optimize("Ofast")))
+void osc_wavebank_allocate() {
+  wavebank = (DATA_TYPE*)aligned_alloc(DATA_ALIGNMENT, WAVE_COUNT * DATA_TYPE_COUNT * sizeof(DATA_TYPE));  
+}
+
+static inline __attribute__((always_inline, optimize("Ofast")))
+void osc_wavebank_free() {
+  if (wavebank != nullptr)
+    free(wavebank);
+}
+#endif
 
   /**
    * Floating point linear wavetable lookup.
