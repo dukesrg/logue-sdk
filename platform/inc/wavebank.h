@@ -294,10 +294,10 @@ float osc_wavebank(float x, float idx) {
   const float y1 = linintf(fr, to_f32(b0), to_f32(b1));
 #else
   uint32_t x1 = NEXT_SAMPLE(x0);
-  const DATA_TYPE *wt = &wavebank[(uint32_t)idx * DATA_TYPE_COUNT];
-  const float y0 = linintf(fr, to_f32(wt[x0]), to_f32(wt[x1]));
-  wt += DATA_TYPE_COUNT;
-  const float y1 = linintf(fr, to_f32(wt[x0]), to_f32(wt[x1]));
+  const DATA_TYPE *wt0 = &wavebank[(uint32_t)idx * DATA_TYPE_COUNT];
+  const DATA_TYPE *wt1 = &wavebank[(((uint32_t)idx+ 1) & (WAVE_COUNT_Y - 1)) * DATA_TYPE_COUNT];
+  const float y0 = linintf(fr, to_f32(wt0[x0]), to_f32(wt0[x1]));
+  const float y1 = linintf(fr, to_f32(wt1[x0]), to_f32(wt1[x1]));
 #endif
   return linintf((idx - (uint32_t)idx), y0, y1);
 }
