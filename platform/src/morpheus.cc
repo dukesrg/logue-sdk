@@ -314,6 +314,7 @@ static float32x4x2_t vModPatches[MOD_PATCHES_COUNT];
 #define VOICE_LIMIT (((runtime_context->voiceLimit - 1) & (STRIDE - 1)) + 1)
 float32x4x2_t vphase;
 float *s_phase = (float *)&vphase;
+uint32_t __attribute__((aligned(32))) vphase_u32[VOICE_COUNT];
 #else
 #define STRIDE UNIT_OUTPUT_CHANNELS
 #define STRIDE_COUNT 1
@@ -588,6 +589,8 @@ __unit_callback void unit_render(const float * in, float * out, uint32_t frames)
     osc_w0f_for_notex4(vnote.val[0], vpitch.val[0] - vcvtq_f32_u32(vnote.val[0])),
     osc_w0f_for_notex4(vnote.val[1], vpitch.val[1] - vcvtq_f32_u32(vnote.val[1]))
   };
+  uint32x4_t vw_0 = vcvtq_n_u32_f32(vw0.val[0], 32);
+  uint32x4_t vw_1 = vcvtq_n_u32_f32(vw0.val[1], 32);
   out += runtime_context->bufferOffset + runtime_context->voiceOffset;
   for (uint32_t voice_idx = 0; voice_idx < runtime_context->voiceLimit; voice_idx++) {
     if (runtime_context->trigger & (1 << voice_idx)) {
@@ -628,61 +631,88 @@ __unit_callback void unit_render(const float * in, float * out, uint32_t frames)
   if (s_mod_type != mod_type_none) {
 #ifdef UNIT_TARGET_PLATFORM_MICROKORG2
     switch (runtime_context->voiceLimit) {
-      case kMk2MaxVoices:
+      case kMk2MaxVoices: {
+        uint32x4_t vphase_u32_0 = vld1q_u32(&vphase_u32[0]);
+        uint32x4_t vphase_u32_1 = vld1q_u32(&vphase_u32[4]);
+__asm__ volatile ("nop\nnop\nnop\nnop\n");
+__asm__ volatile ("nop\nnop\nnop\nnop\n");
+__asm__ volatile ("nop\nnop\nnop\nnop\n");
+__asm__ volatile ("nop\nnop\nnop\nnop\n");
         __asm__ volatile (".p2align 5");
         for (float
-          * __restrict out_p1 = (float *)__builtin_assume_aligned(out + runtime_context->voiceOffset, 16),
-          * __restrict out_p2 = out_p1 + frames * runtime_context->outputStride,
-          * out_e = out_p2
-          ; __builtin_expect(out_p1 < out_e, 1)
-          ; out_p1 += runtime_context->outputStride, out_p2 += runtime_context->outputStride
+          * __restrict out_p0 = (float *)__builtin_assume_aligned(out, 16),
+          * __restrict out_p1 = out_p0 + frames * 4,
+          * out_e = out_p1
+          ; __builtin_expect(out_p0 < out_e, 1)
+          ; out_p0 += 4, out_p1 += 4
         ) {
+          float32x4_t vphase_f32_0 = vcvtq_n_f32_u32(vphase_u32_0, 32);
+          float32x4_t vphase_f32_1 = vcvtq_n_f32_u32(vphase_u32_1, 32);
+          float32x4_t v_0;
           float32x4_t v_1;
-          float32x4_t v_2;
-
+          vst1q_f32(out_p0, v_0);
           vst1q_f32(out_p1, v_1);
-          vst1q_f32(out_p2, v_2);
+          vphase_u32_0 = vaddq_u32(vphase_u32_0, vw_0);
+          vphase_u32_1 = vaddq_u32(vphase_u32_1, vw_1);
         }
+        vst1q_u32(&vphase_u32[0], vphase_u32_0);
+        vst1q_u32(&vphase_u32[4], vphase_u32_1);
         break;
-      case kMk2HalfVoices:
+      }
+      case kMk2HalfVoices: {
+        uint32x4_t vphase_u32_0 = vld1q_u32(&vphase_u32[0]);
         __asm__ volatile (".p2align 5");
         for (float
-          * __restrict out_p1 = (float *)__builtin_assume_aligned(out + runtime_context->voiceOffset, 16),
-          * __restrict out_e = out_p1 + frames * runtime_context->outputStride
-          ; __builtin_expect(out_p1 < out_e, 1)
-          ; out_p1 += runtime_context->outputStride
+          * __restrict out_p0 = (float *)__builtin_assume_aligned(out + runtime_context->bufferOffset, 16),
+          * __restrict out_e = out_p0 + frames * 4
+          ; __builtin_expect(out_p0 < out_e, 1)
+          ; out_p0 += 4
         ) {
-          float32x4_t v_1;
+          float32x4_t vphase_f32_0 = vcvtq_n_f32_u32(vphase_u32_0, 32);
+          float32x4_t v_0;
 
-          vst1q_f32(out_p1, v_1);
+          vst1q_f32(out_p0, v_0);
+          vphase_u32_0 = vaddq_u32(vphase_u32_0, vw_0);
         }
+        vst1q_u32(&vphase_u32[0], vphase_u32_0);
         break;
-      case kMk2QuarterVoices:
+      }
+      case kMk2QuarterVoices: {
+        uint32x2_t vphase_u32_0 = vld1_u32(&vphase_u32[0]);
         __asm__ volatile (".p2align 5");
         for (float
-          * __restrict out_p1 = (float *)__builtin_assume_aligned(out + runtime_context->voiceOffset, 8),
-          * __restrict out_e = out_p1 + frames * runtime_context->outputStride
-          ; __builtin_expect(out_p1 < out_e, 1)
-          ; out_p1 += runtime_context->outputStride
+          * __restrict out_p0 = out + runtime_context->voiceOffset,
+          * __restrict out_e = out_p0 + frames * runtime_context->outputStride
+          ; __builtin_expect(out_p0 < out_e, 1)
+          ; out_p0 += runtime_context->outputStride
         ) {
-          float32x2_t v_1;
+          float32x2_t vphase_f32_0 = vcvtq_n_f32_u32(vphase_u32_0, 32);
+          float32x2_t v_0;
 
-          vst1_f32(out_p1, v_1);
+          vst1_f32((float *)__builtin_assume_aligned(out_p0, 8), v_0);
+          vphase_u32_0 = vadd_u32(vphase_u32_0, vw_0);
         }
+        vst1_u32(&vphase_u32[0], vphase_u32_0);
         break;
-      case kMk2SingleVoice:
+      }
+      case kMk2SingleVoice: {
+        uint32_t vphase_u32_0 = vphase_u32[0];
         __asm__ volatile (".p2align 5");
         for (float
-          * __restrict out_p1 = (float *)__builtin_assume_aligned(out + runtime_context->voiceOffset, 4),
-          * __restrict out_e = out_p1 + frames * 1
-          ; __builtin_expect(out_p1 < out_e, 1)
-          ; out_p1 += 1
+          * __restrict out_p0 = (float *)__builtin_assume_aligned(out + runtime_context->voiceOffset, 4),
+          * __restrict out_e = out_p0 + frames * 2
+          ; __builtin_expect(out_p0 < out_e, 1)
+          ; out_p0 += 2
         ) {
-          float v_1;
+          float vphase_f32_0 = uq32_to_f32(vphase_u32_0);
+          float v_0;
 
-          *out_p1 = v_1;
+          *out_p0 = v_0;
+          vphase_u32_0 += vw_0.val[0];
         }
+        vphase_u32[0] = vphase_u32_0;
         break;
+      }
     }
 #else
 
