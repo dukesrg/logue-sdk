@@ -4,7 +4,7 @@
  *  Hyperloop FX header.
  *
  *
- *  2023 (c) Oleg Burdaev
+ *  2023-2024 (c) Oleg Burdaev
  *  mailto: dukesrg@gmail.com
  */
 
@@ -16,7 +16,7 @@ const __unit_header unit_header_t unit_header = {
     .api = UNIT_API_VERSION,
     .dev_id = 0x656B7544U,
     .unit_id = 0x706F6F4C,
-    .version = 0x00000100U,
+    .version = 0x00000300U,
     .name = "Hyperloop",
     .num_presets = 0,
     .num_params = PARAM_COUNT,
