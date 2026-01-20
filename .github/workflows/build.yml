@@ -1,0 +1,53 @@
+name: Build
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: 'Platform'
+        type: choice
+        required: false
+        default: 'all'
+        options:
+          - all
+          - drumlogue
+          - microkorg2
+          - minilogue-xd
+          - nts-1_mkii
+          - nts-3_kaoss
+          - nutekt-digital
+          - prologue
+      project:
+        description: 'Project'
+        type: string
+        required: false
+
+jobs:
+  build:
+    name: Build
+    runs-on: self-hosted
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Run Build
+        run: |
+          PLATFORM="${{ github.event.inputs.platform }}"
+          PROJECT="${{ github.event.inputs.project }}"
+          ARGS=""
+
+          if [ -n "$PLATFORM" ] && [ -n "$PROJECT" ]; then
+            ARGS="$PLATFORM/$PROJECT"
+          elif [ -n "$PLATFORM" ]; then
+            ARGS="--$PLATFORM"
+          fi
+
+          script -e -c "$GITHUB_WORKSPACE/docker/run_cmd.sh build --force $ARGS" /dev/null
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifact-${{ github.run_id }}
+          path: "**/*.**unit"
+          if-no-files-found: warn
