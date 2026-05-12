@@ -7,3 +7,6 @@
 [submodule "platform/ext/zip"]
 	path = platform/ext/zip
 	url = https://github.com/kuba--/zip
+[submodule "platform/inc/TinySoundFont"]
+	path = platform/inc/TinySoundFont
+	url = https://github.com/schellingb/TinySoundFont
