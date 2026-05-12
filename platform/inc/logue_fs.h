@@ -15,10 +15,6 @@
 #include <dirent.h>
 #include <thread>
 
-#ifndef MAXEXTLEN
-  #define MAXEXTLEN 3
-#endif
-
 struct fs_dir {
   int count;
   struct dirent **dirlist;
@@ -27,7 +23,7 @@ struct fs_dir {
     const char *prefix;
     const char *suffix;
   } filter;
-  char suffix_uc[MAXEXTLEN + 2];
+  char *suffix_uc;
 
   static const fs_dir *&self() {
       static thread_local const fs_dir *ptr = nullptr;
@@ -49,6 +45,8 @@ struct fs_dir {
       return;
     free(dirlist);
     dirlist = nullptr;
+    free(suffix_uc);
+    suffix_uc = nullptr;
   }
 
   char *get(int index) {
@@ -63,6 +61,11 @@ struct fs_dir {
 
   void refresh() {
     cleanup();
+    if (filter.suffix != nullptr) {
+      suffix_uc = strdup(filter.suffix);
+      for (char *p = suffix_uc; *p != 0; p++)
+        *p = toupper(*p);
+    }
     self() = this;
     count = scandir(path, &dirlist, flt, alphasort);
     self() = nullptr;
@@ -70,10 +73,6 @@ struct fs_dir {
 
   void refresh(const char *suffix) {
     filter.suffix = suffix;
-    uint32_t i = 0;
-    while (i < (MAXEXTLEN + 1) && suffix != nullptr && *suffix != 0)
-      suffix_uc[i] = toupper(*suffix++);
-    suffix_uc[i] = 0;
     refresh();
   }
 

@@ -23,12 +23,12 @@ const __unit_header UNIT_HEADER_TYPE unit_header = {
     .api = UNIT_API_VERSION,
     .dev_id = 0x44756B65U,
     .unit_id = 0x544c4056U,
-    .version = 0x00010002U,
+    .version = 0x00010003U,
     .name = UNIT_NAME,
     .num_presets = 0,
     .num_params = PARAM_COUNT,
     .params = {
-        {0, BANK_COUNT * (GENRE_COUNT + 1) + 1, 0, 0, k_unit_param_type_strings, RESERVED, k_unit_param_frac_mode_fixed, 0, {"Bank"}},
+        {0, BANK_COUNT * (GENRE_COUNT + 1) + 1, 0, 0, k_unit_param_type_strings, 0, k_unit_param_frac_mode_fixed, RESERVED, {"Bank"}},
 #ifdef UNIT_TARGET_PLATFORM_DRUMLOGUE
         {0, 2, 0, 0, k_unit_param_type_strings, 0, k_unit_param_frac_mode_fixed, RESERVED, {"Content"}},
 #endif
