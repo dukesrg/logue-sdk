@@ -28,7 +28,7 @@ const __unit_header UNIT_HEADER_TYPE unit_header = {
 #ifdef UNIT_TARGET_PLATFORM_MICROKORG2
         {0, 127, 0, 127, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {"Velocity"}},
 #elif defined(UNIT_TARGET_PLATFORM_DRUMLOGUE)
-        {0, 127, 0, 0, k_unit_param_type_midi_note, 0, k_unit_param_frac_mode_fixed, 0, {"Note"}},
+        {0, 127, 0, 60, k_unit_param_type_midi_note, 0, k_unit_param_frac_mode_fixed, 0, {"Note"}},
 #endif
     }
 };
