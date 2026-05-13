@@ -24,6 +24,7 @@ const __unit_header UNIT_HEADER_TYPE unit_header = {
         {0, 127, 0, 0, k_unit_param_type_strings, 0, k_unit_param_frac_mode_fixed, 0, {"SF File"}},
         {0, 511, 0, 0, k_unit_param_type_strings, 0, k_unit_param_frac_mode_fixed, 0, {"Preset"}},
         {0, 127, 0, 0, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {"Voices"}},
+        {0, 1, 0, 0, k_unit_param_type_onoff, 0, k_unit_param_frac_mode_fixed, 0, {"Sustain"}},
 #ifdef UNIT_TARGET_PLATFORM_MICROKORG2
         {0, 127, 0, 127, k_unit_param_type_none, 0, k_unit_param_frac_mode_fixed, 0, {"Velocity"}},
 #elif defined(UNIT_TARGET_PLATFORM_DRUMLOGUE)

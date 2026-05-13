@@ -47,6 +47,7 @@ enum {
   param_soundfont = 0U,
   param_preset,
   param_max_voices,
+  param_sustain,
 #ifdef UNIT_TARGET_PLATFORM_MICROKORG2
   param_velocity,
 #elif defined(UNIT_TARGET_PLATFORM_DRUMLOGUE)
@@ -144,6 +145,9 @@ __unit_callback void unit_render(const float * in, float * out, uint32_t frames)
     case load_tsf_set:
       tsf_set_output(soundfont, OUTPUT_MODE, k_samplerate, 0.f);
       tsf_set_max_voices(soundfont, Params[param_max_voices]);
+      if (Params[param_preset] >= tsf_get_presetcount(soundfont))
+        Params[param_preset] = tsf_get_presetcount(soundfont) - 1;
+      tsf_channel_set_presetindex(soundfont, 0, Params[param_preset]);
       break;
     default:
       state = load_idle;
@@ -160,13 +164,12 @@ __unit_callback void unit_render(const float * in, float * out, uint32_t frames)
 #ifdef UNIT_TARGET_PLATFORM_MICROKORG2
   for (uint32_t voice_idx = 0; voice_idx < runtime_context->voiceLimit; voice_idx++) {
     if (runtime_context->trigger & (1 << voice_idx)) {
-      tsf_note_on(soundfont, Params[param_preset], (uint32_t)runtime_context->pitch[voice_idx], Params[param_velocity] * VELOCITY_SCALE);
+      tsf_channel_note_on(soundfont, 0, (uint32_t)runtime_context->pitch[voice_idx], Params[param_velocity] * VELOCITY_SCALE);
     }
   }
-#endif
 
-#ifdef UNIT_TARGET_PLATFORM_MICROKORG2
   tsf_render_float(soundfont, out_buf, frames, TSF_FALSE);
+
   for (uint32_t i = 0; i < frames; i++) {
     out_buf[i] *= 0.125f;
     out[i * runtime_context->outputStride] = out_buf[i];
@@ -184,20 +187,6 @@ __unit_callback void unit_render(const float * in, float * out, uint32_t frames)
 //  PERFMON_END(frames)
 }
 
-#ifdef UNIT_TARGET_PLATFORM_DRUMLOGUE
-__unit_callback void unit_note_on(uint8_t note, uint8_t velocity) {
-  if (soundfont == nullptr)
-    return;
-  tsf_note_on(soundfont, Params[param_preset], note, velocity * VELOCITY_SCALE);
-}
-#endif
-
-__unit_callback void unit_note_off(uint8_t note) {
-  if (soundfont == nullptr)
-    return;
-  tsf_note_off(soundfont, Params[param_preset], note);
-}
-
 __unit_callback void unit_set_param_value(uint8_t index, int32_t value) {
   switch (index) {
     case param_soundfont:
@@ -208,7 +197,7 @@ __unit_callback void unit_set_param_value(uint8_t index, int32_t value) {
       if (value == Params[index])
         break;
       if (soundfont != nullptr)
-        tsf_note_off_all(soundfont);
+        tsf_channel_sounds_off_all(soundfont, 0);
       state = load_start;
       break;
     case param_preset:
@@ -216,13 +205,20 @@ __unit_callback void unit_set_param_value(uint8_t index, int32_t value) {
         break;
       if (value > tsf_get_presetcount(soundfont))
         value = tsf_get_presetcount(soundfont) - 1;
-      if (value != Params[index])
-        tsf_note_off_all(soundfont);
+      if (value != Params[index]) {
+        tsf_channel_note_off_all(soundfont, 0);
+        tsf_channel_set_presetindex(soundfont, 0, value);
+      }
       break;
     case param_max_voices:
     	if (soundfont == nullptr)
         break;
       tsf_set_max_voices(soundfont, value);
+      break;
+    case param_sustain:
+    	if (soundfont == nullptr)
+        break;
+      tsf_channel_set_sustain(soundfont, 0, value);
       break;
 #ifdef UNIT_TARGET_PLATFORM_MICROKORG2
     case param_velocity:
@@ -257,9 +253,8 @@ __unit_callback const char * unit_get_param_str_value(uint8_t index, int32_t val
 }
 
 __unit_callback void unit_reset() {
-	if (soundfont == nullptr)
-    return;
-  tsf_reset(soundfont);
+	if (soundfont != nullptr)
+    tsf_reset(soundfont);
 }
 
 __unit_callback void unit_teardown() {
@@ -280,51 +275,60 @@ __unit_callback void unit_resume() {
   suspended = false;
 }
 
-__unit_callback void unit_set_tempo(uint32_t tempo) {
-  (void)tempo;
+//#ifdef UNIT_TARGET_PLATFORM_DRUMLOGUE
+__unit_callback void unit_note_on(uint8_t note, uint8_t velocity) {
+  if (soundfont != nullptr)
+    tsf_channel_note_on(soundfont, 0, note, velocity * VELOCITY_SCALE);
 }
+//#endif
 
-#ifdef UNIT_TARGET_PLATFORM_DRUMLOGUE
-__unit_callback void unit_tempo_4ppqn_tick(uint32_t counter) {
-  (void)counter;
-}
-
-__unit_callback void unit_gate_on(uint8_t velocity) {
-  if (soundfont == nullptr)
-    return;
-  tsf_note_on(soundfont, Params[param_preset], Params[param_note], velocity * VELOCITY_SCALE);
-}
-
-__unit_callback void unit_gate_off() {
-  if (soundfont == nullptr)
-    return;
-  tsf_note_off(soundfont, Params[param_preset], Params[param_note]);
+__unit_callback void unit_note_off(uint8_t note) {
+  if (soundfont != nullptr)
+    tsf_channel_note_off(soundfont, 0, note);
 }
 
 __unit_callback void unit_all_note_off() {
-	if (soundfont == nullptr)
-    return;  
-  tsf_note_off_all(soundfont);  
+	if (soundfont != nullptr)
+    tsf_channel_note_off_all(soundfont, 0);
 }
 
 __unit_callback void unit_pitch_bend(uint16_t pitch_bend) {
-  (void)pitch_bend;
+	if (soundfont != nullptr)
+    tsf_channel_set_pitchwheel(soundfont, 0, pitch_bend);
 }
 
 __unit_callback void unit_channel_pressure(uint8_t pressure) {
-  (void)pressure;
+	if (soundfont != nullptr)
+    tsf_channel_midi_control(soundfont, 0, 11, pressure);
 }
 
 __unit_callback void unit_aftertouch(uint8_t note, uint8_t aftertouch) {
   (void)note;
-  (void)aftertouch;
+	if (soundfont != nullptr)
+    tsf_channel_midi_control(soundfont, 0, 11, aftertouch);
 }
-#endif
+__unit_callback void unit_set_tempo(uint32_t tempo) {
+  (void)tempo;
+}
 
 #ifdef UNIT_TARGET_PLATFORM_MICROKORG2
 __unit_callback void unit_platform_exclusive(uint8_t messageId, void * data, uint32_t dataSize) {
   (void)messageId;
   (void)data;
   (void)dataSize;
+}
+#elif defined(UNIT_TARGET_PLATFORM_DRUMLOGUE)
+__unit_callback void unit_tempo_4ppqn_tick(uint32_t counter) {
+  (void)counter;
+}
+
+__unit_callback void unit_gate_on(uint8_t velocity) {
+  if (soundfont != nullptr)
+    tsf_channel_note_on(soundfont, 0, Params[param_note], velocity * VELOCITY_SCALE);
+}
+
+__unit_callback void unit_gate_off() {
+	if (soundfont != nullptr)
+    tsf_channel_note_off(soundfont, 0, Params[param_note]);
 }
 #endif
