@@ -35,6 +35,7 @@
   #define OUTPUT_MODE	TSF_MONO
   #define SOUNDFONT_PATH "/var/lib/microkorgd/userfs/Programs"
 #elif defined(UNIT_TARGET_PLATFORM_DRUMLOGUE)
+  #include "osc_api.h"
   #define OUTPUT_MODE	TSF_STEREO_INTERLEAVED
   #define SOUNDFONT_PATH "/var/lib/drumlogued/userfs/Programs"
 #endif
@@ -280,7 +281,6 @@ __unit_callback void unit_note_on(uint8_t note, uint8_t velocity) {
   if (soundfont != nullptr)
     tsf_channel_note_on(soundfont, 0, note, velocity * VELOCITY_SCALE);
 }
-//#endif
 
 __unit_callback void unit_note_off(uint8_t note) {
   if (soundfont != nullptr)
@@ -307,6 +307,8 @@ __unit_callback void unit_aftertouch(uint8_t note, uint8_t aftertouch) {
 	if (soundfont != nullptr)
     tsf_channel_midi_control(soundfont, 0, 11, aftertouch);
 }
+//#endif
+
 __unit_callback void unit_set_tempo(uint32_t tempo) {
   (void)tempo;
 }
