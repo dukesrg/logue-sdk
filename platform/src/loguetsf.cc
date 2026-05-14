@@ -32,12 +32,14 @@
 #pragma GCC diagnostic pop
 
 #ifdef UNIT_TARGET_PLATFORM_MICROKORG2
-  #define OUTPUT_MODE	TSF_MONO
   #define SOUNDFONT_PATH "/var/lib/microkorgd/userfs/Programs"
+  #define OUTPUT_MODE	TSF_MONO
+  #define OUTPUT_INSTANCES UNIT_OUTPUT_CHANNELS
 #elif defined(UNIT_TARGET_PLATFORM_DRUMLOGUE)
   #include "osc_api.h"
-  #define OUTPUT_MODE	TSF_STEREO_INTERLEAVED
   #define SOUNDFONT_PATH "/var/lib/drumlogued/userfs/Programs"
+  #define OUTPUT_MODE	TSF_STEREO_INTERLEAVED
+  #define OUTPUT_INSTANCES 1
 #endif
 
 #ifdef UNIT_TARGET_MODULE_OSC
@@ -64,6 +66,7 @@ enum {
   load_read,
   load_close,
   load_tsf_load,
+  load_tsf_copy,
   load_tsf_set,
   load_finished,
 };
@@ -71,9 +74,9 @@ enum {
 const char *prefix = "";
 const char *suffix = ".sf2";
 static fs_dir soundfont_list = fs_dir(SOUNDFONT_PATH, prefix, suffix);
-static tsf *soundfont;
-static char *soundfont_buf;
-static float *out_buf;
+static tsf __attribute__((aligned(32))) *soundfont[OUTPUT_INSTANCES];
+static char __attribute__((aligned(32))) *soundfont_buf;
+static float __attribute__((aligned(32))) *out_buf[OUTPUT_INSTANCES];
 static int32_t Params[PARAM_COUNT];
 static uint32_t state = load_idle;
 static bool suspended;
@@ -91,7 +94,8 @@ __unit_callback int8_t unit_init(const unit_runtime_desc_t * desc) {
     return k_unit_err_geometry;
 #ifdef UNIT_TARGET_MODULE_OSC
   runtime_context = (unit_runtime_osc_context_t *)desc->hooks.runtime_context;
-  out_buf = (float *)malloc(sizeof(float) * desc->frames_per_buffer);
+  for (uint32_t i = 0; i < OUTPUT_INSTANCES; i++)
+    out_buf[i] = (float *)aligned_alloc(32, sizeof(float) * desc->frames_per_buffer);
 #endif
   if (soundfont_list.count > 0)
     state = load_start;
@@ -103,7 +107,8 @@ __unit_callback void unit_render(const float * in, float * out, uint32_t frames)
 //  PERFMON_START
   static FILE *fp;
   static size_t size;
-  static size_t pos;  
+  static size_t pos;
+  static uint32_t instance_idx;
 
   if (suspended)
     return;
@@ -138,17 +143,29 @@ __unit_callback void unit_render(const float * in, float * out, uint32_t frames)
       if (fp != nullptr)
         fclose(fp);
       fp = nullptr;
-      tsf_close(soundfont);
+      for (uint32_t i = 0; i < OUTPUT_INSTANCES; i++)
+        tsf_close(soundfont[i]);
       break;
     case load_tsf_load:
-      soundfont = tsf_load_memory(soundfont_buf, size);
+      soundfont[0] = tsf_load_memory(soundfont_buf, size);
+      if (Params[param_preset] >= tsf_get_presetcount(soundfont[0]))
+        Params[param_preset] = tsf_get_presetcount(soundfont[0]) - 1;
+      instance_idx = 1;
+      break;
+    case load_tsf_copy:
+      if (instance_idx >= OUTPUT_INSTANCES)
+        break;
+      soundfont[instance_idx] = tsf_copy(soundfont[0]);
+      instance_idx++;
+      state--;
       break;
     case load_tsf_set:
-      tsf_set_output(soundfont, OUTPUT_MODE, k_samplerate, 0.f);
-      tsf_set_max_voices(soundfont, Params[param_max_voices]);
-      if (Params[param_preset] >= tsf_get_presetcount(soundfont))
-        Params[param_preset] = tsf_get_presetcount(soundfont) - 1;
-      tsf_channel_set_presetindex(soundfont, 0, Params[param_preset]);
+      for (uint32_t i = 0; i < OUTPUT_INSTANCES; i++) {
+        tsf_set_output(soundfont[i], OUTPUT_MODE, k_samplerate, 0.f);
+        tsf_set_max_voices(soundfont[i], Params[param_max_voices]);
+        tsf_channel_set_presetindex(soundfont[i], 0, Params[param_preset]);
+        tsf_channel_set_sustain(soundfont[i], 0, Params[param_sustain]);
+      }
       break;
     default:
       state = load_idle;
@@ -159,31 +176,152 @@ __unit_callback void unit_render(const float * in, float * out, uint32_t frames)
     return;
   }
   
-  if (soundfont == nullptr)
+  if (soundfont[0] == nullptr)
     return;
 
 #ifdef UNIT_TARGET_PLATFORM_MICROKORG2
   for (uint32_t voice_idx = 0; voice_idx < runtime_context->voiceLimit; voice_idx++) {
     if (runtime_context->trigger & (1 << voice_idx)) {
-      tsf_channel_note_on(soundfont, 0, (uint32_t)runtime_context->pitch[voice_idx], Params[param_velocity] * VELOCITY_SCALE);
+      tsf_channel_note_off_all(soundfont[voice_idx], 0);
+      tsf_channel_note_on(soundfont[voice_idx], 0, (uint32_t)runtime_context->pitch[voice_idx], Params[param_velocity] * VELOCITY_SCALE);
+    }
+    tsf_render_float(soundfont[voice_idx], out_buf[voice_idx], frames, TSF_FALSE);
+  }
+
+  float *end = out_buf[0] + frames;
+  switch (runtime_context->voiceLimit) {
+    case kMk2MaxVoices: {
+      float32x4_t v0, v1, v2, v3;
+      __asm__ volatile (
+        ".p2align 5\n"
+        "1:\n"
+        "vld1.32 {%q[v0]}, [%[s0]:128]!\n"
+        "vld1.32 {%q[v1]}, [%[s1]:128]!\n"
+        "vld1.32 {%q[v2]}, [%[s2]:128]!\n"
+        "vld1.32 {%q[v3]}, [%[s3]:128]!\n"
+        "vst4.32 {%e[v0], %e[v1], %e[v2], %e[v3]}, [%[out0]:256]!\n"
+        "vst4.32 {%f[v0], %f[v1], %f[v2], %f[v3]}, [%[out0]:256]!\n"
+        "vld1.32 {%q[v0]}, [%[s4]:128]!\n"
+        "vld1.32 {%q[v1]}, [%[s5]:128]!\n"
+        "vld1.32 {%q[v2]}, [%[s6]:128]!\n"
+        "vld1.32 {%q[v3]}, [%[s7]:128]!\n"
+        "vst4.32 {%e[v0], %e[v1], %e[v2], %e[v3]}, [%[out1]:256]!\n"
+        "cmp %[s0], %[end]\n"
+        "vst4.32 {%f[v0], %f[v1], %f[v2], %f[v3]}, [%[out1]:256]!\n"
+        "blo 1b\n"
+        : [v0]"=w"(v0), [v1]"=w"(v1), [v2]"=w"(v2), [v3]"=w"(v3)
+        : [out0]"r"(out), [s0]"r"(out_buf[0]), [s1]"r"(out_buf[1]), [s2]"r"(out_buf[2]), [s3]"r"(out_buf[3]),
+          [out1]"r"(out + 256), [s4]"r"(out_buf[4]), [s5]"r"(out_buf[5]), [s6]"r"(out_buf[6]), [s7]"r"(out_buf[7]),
+          [end]"r"(end)
+        : "cc", "memory"
+      );
+      break;
+    }
+    case kMk2HalfVoices: {
+      float32x4_t v0, v1, v2, v3;
+      __asm__ volatile (
+        ".p2align 5\n"
+        "1:\n"
+        "vld1.32 {%q[v0]}, [%[s0]:128]!\n"
+        "vld1.32 {%q[v1]}, [%[s1]:128]!\n"
+        "vld1.32 {%q[v2]}, [%[s2]:128]!\n"
+        "vld1.32 {%q[v3]}, [%[s3]:128]!\n"
+        "vst4.32 {%e[v0], %e[v1], %e[v2], %e[v3]}, [%[out0]:256]!\n"
+        "cmp %[s0], %[end]\n"
+        "vst4.32 {%f[v0], %f[v1], %f[v2], %f[v3]}, [%[out0]:256]!\n"
+        "blo 1b\n"
+        : [v0]"=w"(v0), [v1]"=w"(v1), [v2]"=w"(v2), [v3]"=w"(v3)
+        : [out0]"r"(out + runtime_context->bufferOffset), [s0]"r"(out_buf[0]), [s1]"r"(out_buf[1]), [s2]"r"(out_buf[2]), [s3]"r"(out_buf[3]),
+          [end]"r"(end)
+        : "cc", "memory"
+      );
+      break;
+    }
+    case kMk2QuarterVoices: {
+      float32x4_t v0, v1;
+      if (runtime_context->outputStride == 2) {
+        __asm__ volatile (
+          ".p2align 5\n"
+          "1:\n"
+          "vld1.32 {%q[v0]}, [%[s0]:128]!\n"
+          "vld1.32 {%q[v1]}, [%[s1]:128]!\n"
+          "cmp %[s0], %[end]\n"
+          "vst2.32 {%q[v0], %q[v1]}, [%[out0]:256]!\n"
+          "blo 1b\n"
+          : [v0]"=w"(v0), [v1]"=w"(v1)
+          : [out0]"r"(out), [s0]"r"(out_buf[0]), [s1]"r"(out_buf[1]),
+            [end]"r"(end)
+          : "cc", "memory"
+        );
+      } else if (runtime_context->voiceOffset == 0) {
+        __asm__ volatile (
+          ".p2align 5\n"
+          "1:\n"
+          "vld4.32 {%q[v0], %q[v1]}, [%[out0]:256]\n"
+          "vld1.32 {%e[v0]}, [%[s0]:64]!\n"
+          "vld1.32 {%f[v0]}, [%[s1]:64]!\n"
+          "cmp %[s0], %[end]\n"
+          "vst4.32 {%q[v0], %q[v1]}, [%[out0]:256]!\n"
+          "blo 1b\n"
+          : [v0]"=w"(v0), [v1]"=w"(v1)
+          : [out0]"r"(out), [s0]"r"(out_buf[0]), [s1]"r"(out_buf[1]),
+            [end]"r"(end)
+          : "cc", "memory"
+        );
+      } else {
+        __asm__ volatile (
+          ".p2align 5\n"
+          "1:\n"
+          "vld4.32 {%q[v0], %q[v1]}, [%[out0]:256]\n"
+          "vld1.32 {%e[v1]}, [%[s0]:64]!\n"
+          "vld1.32 {%f[v1]}, [%[s1]:64]!\n"
+          "cmp %[s0], %[end]\n"
+          "vst4.32 {%q[v0], %q[v1]}, [%[out0]:256]!\n"
+          "blo 1b\n"
+          : [v0]"=w"(v0), [v1]"=w"(v1)
+          : [out0]"r"(out), [s0]"r"(out_buf[0]), [s1]"r"(out_buf[1]),
+            [end]"r"(end)
+          : "cc", "memory"
+        );
+      }
+      break;
+    }
+    case kMk2SingleVoice: {
+      float32x4_t v0, v1;
+      if (runtime_context->voiceOffset == 0) {
+        __asm__ volatile (
+          ".p2align 5\n"
+          "1:\n"
+          "vld2.32 {%q[v0], %q[v1]}, [%[out0]:256]\n"
+          "vld1.32 {%q[v0]}, [%[s0]:128]!\n"
+          "cmp %[s0], %[end]\n"
+          "vst2.32 {%q[v0], %q[v1]}, [%[out0]:256]!\n"
+          "blo 1b\n"
+          : [v0]"=w"(v0), [v1]"=w"(v1)
+          : [out0]"r"(out), [s0]"r"(out_buf[0]),
+            [end]"r"(end)
+          : "cc", "memory"
+        );
+      } else {
+        __asm__ volatile (
+          ".p2align 5\n"
+          "1:\n"
+          "vld2.32 {%q[v0], %q[v1]}, [%[out0]:256]\n"
+          "vld1.32 {%q[v1]}, [%[s0]:128]!\n"
+          "cmp %[s0], %[end]\n"
+          "vst2.32 {%q[v0], %q[v1]}, [%[out0]:256]!\n"
+          "blo 1b\n"
+          : [v0]"=w"(v0), [v1]"=w"(v1)
+          : [out0]"r"(out), [s0]"r"(out_buf[0]),
+            [end]"r"(end)
+          : "cc", "memory"
+        );
+      }
+      break;
     }
   }
-
-  tsf_render_float(soundfont, out_buf, frames, TSF_FALSE);
-
-  for (uint32_t i = 0; i < frames; i++) {
-    out_buf[i] *= 0.125f;
-    out[i * runtime_context->outputStride] = out_buf[i];
-    out[i * runtime_context->outputStride + 1] = out_buf[i];
-    out[i * runtime_context->outputStride + 2] = out_buf[i];
-    out[i * runtime_context->outputStride + 3] = out_buf[i];
-    out[i * runtime_context->outputStride + runtime_context->bufferOffset] = out_buf[i];
-    out[i * runtime_context->outputStride + runtime_context->bufferOffset + 1] = out_buf[i];
-    out[i * runtime_context->outputStride + runtime_context->bufferOffset + 2] = out_buf[i];
-    out[i * runtime_context->outputStride + runtime_context->bufferOffset + 3] = out_buf[i];
-  }
 #elif defined(UNIT_TARGET_PLATFORM_DRUMLOGUE)
-  tsf_render_float(soundfont, out, frames, TSF_FALSE);
+  tsf_render_float(soundfont[0], out, frames, TSF_FALSE);
 #endif
 //  PERFMON_END(frames)
 }
@@ -197,29 +335,34 @@ __unit_callback void unit_set_param_value(uint8_t index, int32_t value) {
         value = soundfont_list.count - 1;
       if (value == Params[index])
         break;
-      if (soundfont != nullptr)
-        tsf_channel_sounds_off_all(soundfont, 0);
+      if (soundfont[0] != nullptr)
+        for (uint32_t i = 0; i < OUTPUT_INSTANCES; i++)
+          tsf_channel_sounds_off_all(soundfont[i], 0);
       state = load_start;
       break;
     case param_preset:
-    	if (soundfont == nullptr)
+    	if (soundfont[0] == nullptr)
         break;
-      if (value > tsf_get_presetcount(soundfont))
-        value = tsf_get_presetcount(soundfont) - 1;
+      if (value > tsf_get_presetcount(soundfont[0]))
+        value = tsf_get_presetcount(soundfont[0]) - 1;
       if (value != Params[index]) {
-        tsf_channel_note_off_all(soundfont, 0);
-        tsf_channel_set_presetindex(soundfont, 0, value);
+        for (uint32_t i = 0; i < OUTPUT_INSTANCES; i++) {
+          tsf_channel_note_off_all(soundfont[i], 0);
+          tsf_channel_set_presetindex(soundfont[i], 0, value);
+        }
       }
       break;
     case param_max_voices:
-    	if (soundfont == nullptr)
+    	if (soundfont[0] == nullptr)
         break;
-      tsf_set_max_voices(soundfont, value);
+      for (uint32_t i = 0; i < OUTPUT_INSTANCES; i++)
+        tsf_set_max_voices(soundfont[i], value);
       break;
     case param_sustain:
-    	if (soundfont == nullptr)
+    	if (soundfont[0] == nullptr)
         break;
-      tsf_channel_set_sustain(soundfont, 0, value);
+      for (uint32_t i = 0; i < OUTPUT_INSTANCES; i++)
+        tsf_channel_set_sustain(soundfont[i], 0, value);
       break;
 #ifdef UNIT_TARGET_PLATFORM_MICROKORG2
     case param_velocity:
@@ -244,28 +387,31 @@ __unit_callback const char * unit_get_param_str_value(uint8_t index, int32_t val
         value = soundfont_list.count - 1;
       return soundfont_list.get(value);
     case param_preset:
-    	if (soundfont == nullptr)
+    	if (soundfont[0] == nullptr)
         break;
-      if (value > tsf_get_presetcount(soundfont))
-        value = tsf_get_presetcount(soundfont) - 1;
-      return tsf_get_presetname(soundfont, value);
+      if (value > tsf_get_presetcount(soundfont[0]))
+        value = tsf_get_presetcount(soundfont[0]) - 1;
+      return tsf_get_presetname(soundfont[0], value);
   }
   return nullptr;
 }
 
 __unit_callback void unit_reset() {
-	if (soundfont != nullptr)
-    tsf_reset(soundfont);
+	if (soundfont[0] != nullptr)
+    for (uint32_t i = 0; i < OUTPUT_INSTANCES; i++)
+      tsf_reset(soundfont[i]);
 }
 
 __unit_callback void unit_teardown() {
+  soundfont_list.cleanup();
   free(soundfont_buf);
   soundfont_buf = nullptr;
-  tsf_close(soundfont);
-  soundfont = nullptr;
-  soundfont_list.cleanup();
-  free(out_buf);
-  out_buf = nullptr;
+  for (uint32_t i = 0; i < OUTPUT_INSTANCES; i++) {
+    tsf_close(soundfont[i]);
+    soundfont[i] = nullptr;
+    free(out_buf[i]);
+    out_buf[i] = nullptr;
+  }
 }
 
 __unit_callback void unit_suspend() {
@@ -276,38 +422,38 @@ __unit_callback void unit_resume() {
   suspended = false;
 }
 
-//#ifdef UNIT_TARGET_PLATFORM_DRUMLOGUE
+#ifdef UNIT_TARGET_PLATFORM_DRUMLOGUE
 __unit_callback void unit_note_on(uint8_t note, uint8_t velocity) {
-  if (soundfont != nullptr)
-    tsf_channel_note_on(soundfont, 0, note, velocity * VELOCITY_SCALE);
+  if (soundfont[0] != nullptr)
+    tsf_channel_note_on(soundfont[0], 0, note, velocity * VELOCITY_SCALE);
 }
 
 __unit_callback void unit_note_off(uint8_t note) {
-  if (soundfont != nullptr)
-    tsf_channel_note_off(soundfont, 0, note);
+  if (soundfont[0] != nullptr)
+    tsf_channel_note_off(soundfont[0], 0, note);
 }
 
 __unit_callback void unit_all_note_off() {
-	if (soundfont != nullptr)
-    tsf_channel_note_off_all(soundfont, 0);
+	if (soundfont[0] != nullptr)
+    tsf_channel_note_off_all(soundfont[0], 0);
 }
 
 __unit_callback void unit_pitch_bend(uint16_t pitch_bend) {
-	if (soundfont != nullptr)
-    tsf_channel_set_pitchwheel(soundfont, 0, pitch_bend);
+	if (soundfont[0] != nullptr)
+    tsf_channel_set_pitchwheel(soundfont[0], 0, pitch_bend);
 }
 
 __unit_callback void unit_channel_pressure(uint8_t pressure) {
-	if (soundfont != nullptr)
-    tsf_channel_midi_control(soundfont, 0, 11, pressure);
+	if (soundfont[0] != nullptr)
+    tsf_channel_midi_control(soundfont[0], 0, 11, pressure);
 }
 
 __unit_callback void unit_aftertouch(uint8_t note, uint8_t aftertouch) {
   (void)note;
-	if (soundfont != nullptr)
-    tsf_channel_midi_control(soundfont, 0, 11, aftertouch);
+	if (soundfont[0] != nullptr)
+    tsf_channel_midi_control(soundfont[0], 0, 11, aftertouch);
 }
-//#endif
+#endif
 
 __unit_callback void unit_set_tempo(uint32_t tempo) {
   (void)tempo;
@@ -325,12 +471,12 @@ __unit_callback void unit_tempo_4ppqn_tick(uint32_t counter) {
 }
 
 __unit_callback void unit_gate_on(uint8_t velocity) {
-  if (soundfont != nullptr)
-    tsf_channel_note_on(soundfont, 0, Params[param_note], velocity * VELOCITY_SCALE);
+  if (soundfont[0] != nullptr)
+    tsf_channel_note_on(soundfont[0], 0, Params[param_note], velocity * VELOCITY_SCALE);
 }
 
 __unit_callback void unit_gate_off() {
-	if (soundfont != nullptr)
-    tsf_channel_note_off(soundfont, 0, Params[param_note]);
+	if (soundfont[0] != nullptr)
+    tsf_channel_note_off(soundfont[0], 0, Params[param_note]);
 }
 #endif
