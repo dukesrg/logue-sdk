@@ -450,9 +450,7 @@ __unit_callback void unit_channel_pressure(uint8_t pressure) {
 
 __unit_callback void unit_aftertouch(uint8_t note, uint8_t aftertouch) {
   (void)note;
-	if (soundfont[0] != nullptr)
-    tsf_channel_midi_control(soundfont[0], 0, 11, aftertouch);
-}
+  (void)aftertouch;}
 #endif
 
 __unit_callback void unit_set_tempo(uint32_t tempo) {
