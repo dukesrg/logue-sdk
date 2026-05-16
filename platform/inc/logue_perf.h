@@ -3,7 +3,7 @@
  *
  *  logue SDK 2.x performance monitoring
  *
- *  2025 (c) Oleg Burdaev
+ *  2025-2026 (c) Oleg Burdaev
  *  mailto: dukesrg@gmail.com
  */
 
@@ -14,6 +14,16 @@
 #ifdef PERFMON_ENABLE
 #ifdef __cortex_a7__
   #include <time.h>
+  #define PERFMON_RENDER_DUTY_100 20833
+  #define PERFMON_RENDER_DUTY_90 18750
+  #define PERFMON_RENDER_DUTY_80 16666
+  #define PERFMON_RENDER_DUTY_70 14583
+  #define PERFMON_RENDER_DUTY_60 12500
+  #define PERFMON_RENDER_DUTY_50 10416
+  #define PERFMON_RENDER_DUTY_40 8333
+  #define PERFMON_RENDER_DUTY_30 6250
+  #define PERFMON_RENDER_DUTY_20 4166
+  #define PERFMON_RENDER_DUTY_10 2083
 #elif defined(ARM_MATH_CM7)
   #include <../ext/CMSIS/Device/ARM/ARMCM7/Include/ARMCM7_DP.h>
 #else
@@ -69,6 +79,21 @@ static struct perfmon {
   }
 
   inline __attribute__((optimize("Ofast"), always_inline))
+  uint32_t render_overrun(uint32_t frames, uint32_t threshold) {
+    uint32_t dif;
+#ifdef __cortex_a7__
+    clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tse);
+    dif = tse.tv_nsec - tss.tv_nsec;
+    if (dif >= 0x80000000)
+      dif += 1000000000;
+    return dif > frames * threshold;
+#else
+    #pragma GCC warning "PERFMON_RENDER_IS_OVERRUN is not implemented for Cortex-M and will always report true"
+    return 1;
+#endif
+  }
+
+  inline __attribute__((optimize("Ofast"), always_inline))
   void end(uint32_t frames) {
     uint32_t dif;
 #ifdef __cortex_a7__
@@ -114,11 +139,13 @@ static struct perfmon {
 #define PERFMON_END(samples) perfmon.end(samples);
 #define PERFMON_RESET(param_num, index, value) if (index == param_num) return perfmon.reset(value == UNIT_PARAMS[param_num].min);
 #define PERFMON_VALUE(param_num, index, value) if (index == param_num) return perfmon.value(value == UNIT_PARAMS[param_num].max);
+#define PERFMON_RENDER_IS_OVERRUN(samples, threshold) perfmon.render_overrun(samples, threshold)
 #else
 #define PERFMON_START
 #define PERFMON_END(samples)
 #define PERFMON_RESET(param_num, index, value)
 #define PERFMON_VALUE(param_num, index, value)
+#define PERFMON_RENDER_IS_OVERRUN(samples, threshold)
 #endif
 
 #else
