@@ -276,7 +276,10 @@ enum {
 #if MODMATRIX == 1
   static float s_opval[POLYPHONY][OPERATOR_COUNT + FEEDBACK_COUNT * 2];
 #else
-  static float s_opval[POLYPHONY][OPERATOR_COUNT];
+  // Rows padded to a multiple of 4: the mod matrix loads 4 floats from
+  // s_opval[v][4], so a 6-wide row reads 2 floats past the row (and past the
+  // array for the last voice). The padding is never written and stays 0.
+  static float s_opval[POLYPHONY][(OPERATOR_COUNT + 3) & ~3] __attribute__((aligned(16)));
 #endif
 #if MODMATRIX == 1 || MODMATRIX == 2
   static float32x4x2_t vModMatrix[POLYPHONY][OPERATOR_COUNT];
@@ -751,7 +754,8 @@ void setWaveformPinch() {
       rate_factor *= DX7_RATE1_FACTOR;
     float rscale = (note - NOTE_A_1) * clipminmax(0.f, s_op_rate_scale[synvoice_idx][i] + s_krsoffset[i], 7.f) * s_krslevel[i];
     float rate = clipminmax(0.f, s_egrate[synvoice_idx][i][j] + s_egrateoffset[i], 99.f) * s_egratelevel[i];
-    return f32_to_q31(rate_factor * fastpow2(DX7_RATE_EXP_FACTOR * (rate + rscale)));
+    const q31_t increment = f32_to_q31(rate_factor * fastpow2(DX7_RATE_EXP_FACTOR * (rate + rscale)));
+    return increment != 0 ? increment : (rate_factor < 0.f ? -1 : 1);
   }
 
 #ifdef NOINTERPOLATE
@@ -866,7 +870,8 @@ void setWaveformPinch() {
     if (synvoice_idx == POLYPHONY)
     for (uint32_t i = 0; i < POLYPHONY; i++) {
 //      if (s_sample_cnt[i] > sample_cnt  && SynVoices[i].note != note) {// && (SynVoices[synvoice_idx].state & state_noteon) == 0) {
-      if (s_sample_cnt[i] > sample_cnt) {// && (SynVoices[synvoice_idx].state & state_noteon) == 0) {
+      // >= so a voice is always found, even when every voice was just (re)triggered in this block
+      if (s_sample_cnt[i] >= sample_cnt) {// && (SynVoices[synvoice_idx].state & state_noteon) == 0) {
         sample_cnt = s_sample_cnt[i];
         synvoice_idx = i;
       }
@@ -1043,6 +1048,8 @@ void setWaveformPinch() {
           continue;
         switch (((uint32_t *)sample->name)[1]) {
           case 0x6B6E6142:  // 'Bank'
+            if (voicebank_idx >= MAX_SAMPLES_LOAD)
+              break;
             DxVoiceBanks[voicebank_idx].dxvoice_ptr = (const dx_voice_t *)sample->sample_ptr;
             DxVoiceBanks[voicebank_idx].count = sample->frames * sample->channels * sizeof(sample->sample_ptr[0]) / sizeof(dx_voice_t);
             voicebank_idx++;
@@ -1158,7 +1165,7 @@ __unit_callback void unit_render(const float * in, float * out, uint32_t frames)
   float pitch = sPitchBend;
   if (s_kit_voice)
     pitch = KIT_CENTER;
-  pitch += s_pegval[synvoice_idx];
+  pitch += s_pegval[synvoice_idx] * .00390625f; // PEG is 1/256 semitone (PEG_SCALE); pitch here is in semitones
   float basew0;
   float opw0[OPERATOR_COUNT];
   for (uint32_t i = 0; i < OPERATOR_COUNT; i++) {
@@ -1857,6 +1864,8 @@ __unit_callback void unit_render(const float * in, float * out, uint32_t frames)
 }
 
 __unit_callback void unit_set_param_value(uint8_t id, int32_t value) {
+    if (id == param_dxvoice_idx && (value < 0 || value > unit_header.params[id].max || getDxVoice(value) == nullptr))
+      return;
     sParams[id] = value;    
     switch (id) {
       case param_gate_note:
@@ -1975,7 +1984,7 @@ __unit_callback const char * unit_get_param_str_value(uint8_t id, int32_t value)
           if (strchr(" -.", name[i - 1]) == nullptr) 
             name[i] = tolower(name[i]);
         }
-        for (char *p = strstr(name, " "); p != nullptr; strcpy(p, p + 1), p = strstr(name, " ")); //remove spaces
+        for (char *p = strstr(name, " "); p != nullptr; memmove(p, p + 1, strlen(p + 1) + 1), p = strstr(name, " ")); //remove spaces (memmove: buffers overlap)
         return name;
       case param_mode:
         if (value < mode_chord)
@@ -2047,7 +2056,10 @@ __unit_callback void unit_gate_off() {
   noteOff(gate_note);
 }
 
-__unit_callback void unit_all_note_off() {}
+__unit_callback void unit_all_note_off() {
+  for (uint32_t note = 0; note < 128; note++)
+    noteOff(note);
+}
 
 __unit_callback void unit_pitch_bend(uint16_t bend) {
   sPitchBend = ((int32_t)bend - PITCH_BEND_CENTER) * PITCH_BEND_SENSITIVITY;
