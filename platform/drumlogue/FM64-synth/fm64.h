@@ -192,7 +192,7 @@ static const uint8_t level_lut[] = {
 };
 
 static fast_inline uint8_t scale_level(uint8_t x) {
-  return x < sizeof(level_lut) ? level_lut[x] : x + (127 - 99);
+  return x < sizeof(level_lut) ? level_lut[x] : (x > 99 ? 127 : x + (127 - 99));
 }
 
 static const int8_t pitch_level_lut_low[] = {
